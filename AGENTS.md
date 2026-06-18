@@ -194,6 +194,13 @@ When a screenshot is parsed, prices and shares are extracted and saved to `portf
 - **Logic:** Search via Tavily API
 - **Output:** News summary + market context
 
+### 6. Authentication
+
+- **Input:** Google OAuth sign-in (via Auth.js v5 / NextAuth)
+- **Logic:** Middleware protects all routes; unauthenticated users redirected to Google sign-in. Optional `ALLOWED_EMAIL` env var restricts login to a single Google account (single-user gate).
+- **Output:** Authenticated session with user avatar/name in the top bar; logout button
+- **Location:** Global header (`UserMenuMolecule` in root layout)
+
 ## API Endpoints
 
 ### POST /api/chat
@@ -273,9 +280,23 @@ Returns the latest saved snapshot (or `null` if none exists).
 ## Environment Variables
 
 ```bash
-# Required
-OLLAMA_API_KEY=your_ollama_cloud_key
+# Required — Database
 DATABASE_URL=postgresql://user:pass@ep-xxx.neon.tech/dbname?sslmode=require
+
+# Required — AI
+OLLAMA_API_KEY=your_ollama_cloud_key
+
+# Required — Auth.js v5 (authentication)
+# Generate with: openssl rand -base64 32
+AUTH_SECRET=your_auth_secret
+# Google OAuth credentials (https://console.cloud.google.com)
+AUTH_GOOGLE_ID=your_google_oauth_client_id
+AUTH_GOOGLE_SECRET=your_google_oauth_client_secret
+
+# Optional — restrict login to a single Google account (recommended)
+ALLOWED_EMAIL=your_email@gmail.com
+# Optional — app base URL (auto-detected on Vercel, set for local dev)
+NEXTAUTH_URL=http://localhost:3000
 
 # Optional (v1.1)
 TAVILY_API_KEY=your_tavily_key
@@ -289,6 +310,7 @@ LANGFUSE_SECRET_KEY=your_langfuse_secret_key
 src/
 ├── app/
 │   ├── api/
+│   │   ├── auth/[...nextauth]/route.ts # NextAuth route handler
 │   │   ├── chat/route.ts              # Allocation + AI explanation
 │   │   ├── init-rules/route.ts        # Seed default rules
 │   │   ├── parse-portfolio/route.ts   # Vision LLM screenshot parser
@@ -341,10 +363,13 @@ src/
     │   ├── InputAtom/
     │   └── ProgressBarAtom/
     ├── molecules/
-    │   ├── AIExplanationMolecule/
-    │   ├── PortfolioPositionMolecule/   # ETF card with Excel-style row (Кол-во/Цена/Сумма)
-    │   └── RecommendationItemMolecule/
+│   ├── AIExplanationMolecule/
+│   ├── PortfolioPositionMolecule/   # ETF card with Excel-style row (Кол-во/Цена/Сумма)
+│   ├── RecommendationItemMolecule/
+│   └── UserMenuMolecule/             # Login/logout + user avatar (Google OAuth)
     ├── lib/
+    │   ├── auth.ts                   # Auth.js v5 config (Google provider, single-user gate)
+    │   ├── SessionProvider.tsx       # Client-side session context wrapper
     │   ├── db.ts                      # PostgreSQL pool (pg)
     │   ├── mastra.ts                  # Mastra instance factory
     │   ├── migrations.ts             # Schema creation + ALTER TABLE
@@ -451,6 +476,7 @@ Target allocations are stored in the `portfolio_rules` table and loaded at runti
 - Rules editing UI on `/rules` page
 - Dashboard loads latest snapshot from DB automatically
 - Mobile-friendly responsive layout
+- Authentication via Auth.js v5 (Google OAuth, single-user gate, middleware protection)
 
 ### 🔄 In Progress
 
@@ -468,7 +494,7 @@ Target allocations are stored in the `portfolio_rules` table and loaded at runti
 
 1. No real money transactions — this is advisory only
 2. No IB API integration yet — manual screenshot upload
-3. Single user — no authentication in MVP
+3. Single user — Google OAuth gate via `ALLOWED_EMAIL` (no multi-tenancy, no user_id in DB)
 4. Russian language UI — but code/comments in English
 5. `pg` driver is server-only; client components never import it directly
 6. AI SDK removed — using direct `fetch()` to Ollama Cloud due to v5 incompatibility
