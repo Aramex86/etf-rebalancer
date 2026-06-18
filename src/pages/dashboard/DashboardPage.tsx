@@ -1,0 +1,212 @@
+"use client";
+
+import { useState, useCallback, useEffect } from "react";
+import Link from "next/link";
+import { AIExplanationFeature } from "@/features/ai-explanation";
+import { CalculateAllocationFeature } from "@/features/calculate-allocation";
+import { ParsedPortfolio } from "@/features/portfolio-upload";
+import { ButtonAtom } from "@/shared/atoms/ButtonAtom";
+import { PortfolioPositionMolecule } from "@/shared/molecules/PortfolioPositionMolecule";
+import { CardAtom } from "@/shared/atoms/CardAtom";
+import { colors, spacing, typography } from "@/shared/ui/tokens";
+
+function PortfolioPositionsContent({
+  loading,
+  portfolio,
+  targetAllocations,
+}: {
+  loading: boolean;
+  portfolio: ParsedPortfolio | null;
+  targetAllocations: Record<string, number>;
+}) {
+  if (loading) {
+    return <p style={{ color: colors.neutral[500] }}>⏳ Загрузка...</p>;
+  }
+
+  if (!portfolio) {
+    return (
+      <p style={{ color: colors.neutral[500] }}>
+        Загрузите скриншот портфеля для отображения данных
+      </p>
+    );
+  }
+
+  return (
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))",
+        gap: spacing[3],
+      }}
+    >
+      {Object.entries(portfolio.positions).map(([symbol, value]) => {
+        const currentWeight =
+          portfolio.totalValue > 0 ? value / portfolio.totalValue : 0;
+        const target = targetAllocations[symbol] || 0;
+        const price = portfolio.prices?.[symbol];
+        const shares = portfolio.shares?.[symbol];
+        return (
+          <PortfolioPositionMolecule
+            key={symbol}
+            symbol={symbol}
+            value={value}
+            weight={currentWeight * 100}
+            targetWeight={target * 100}
+            price={price}
+            shares={shares}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
+export default function DashboardPage() {
+  const [amount, setAmount] = useState(0);
+  const [calculationTrigger, setCalculationTrigger] = useState(0);
+  const [portfolio, setPortfolio] = useState<ParsedPortfolio | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [targetAllocations, setTargetAllocations] = useState<
+    Record<string, number>
+  >({});
+  const [loadingTargets, setLoadingTargets] = useState(true);
+
+  // Загружаем последний снапшот из БД при монтировании
+  useEffect(() => {
+    fetch("/api/portfolio-snapshot")
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.portfolio) {
+          setPortfolio(data.portfolio);
+        }
+      })
+      .catch(console.error)
+      .finally(() => setLoading(false));
+  }, []);
+
+  // Загружаем целевые доли
+  useEffect(() => {
+    fetch("/api/portfolio-rules")
+      .then((res) => res.json())
+      .then((data) => {
+        const rules: Record<string, number> = {};
+        for (const rule of data.rules) {
+          rules[rule.symbol] = rule.targetWeight;
+        }
+        setTargetAllocations(rules);
+      })
+      .catch(() => setTargetAllocations({}))
+      .finally(() => setLoadingTargets(false));
+  }, []);
+
+  const handleCalculate = useCallback(() => {
+    setCalculationTrigger((prev) => prev + 1);
+  }, []);
+
+  return (
+    <main
+      style={{
+        minHeight: "100vh",
+        backgroundColor: colors.neutral[50],
+        padding: `${spacing[6]} ${spacing[4]}`,
+      }}
+    >
+      <div
+        style={{
+          width: "100%",
+          margin: "0 auto",
+          display: "grid",
+          gridTemplateColumns: "1fr",
+          gap: spacing[4],
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "flex-end",
+            alignItems: "center",
+          }}
+        >
+          <Link href="/rules">
+            <ButtonAtom variant="secondary" size="sm">
+              ⚙️ Правила портфеля
+            </ButtonAtom>
+          </Link>
+        </div>
+
+        <div
+          style={{
+            display: "flex",
+            flexWrap: "wrap",
+            gap: spacing[4],
+            alignItems: "start",
+          }}
+        >
+          <div
+            style={{
+              flex: "1 1 300px",
+              minWidth: "280px",
+              display: "grid",
+              gap: spacing[4],
+            }}
+          >
+            <CalculateAllocationFeature
+              amount={amount}
+              onAmountChange={setAmount}
+              onCalculate={handleCalculate}
+              portfolio={portfolio || undefined}
+            />
+          </div>
+          <div style={{ flex: "1 1 300px", minWidth: "280px" }}>
+            <AIExplanationFeature
+              amount={amount}
+              trigger={calculationTrigger}
+              portfolio={portfolio}
+            />
+          </div>
+        </div>
+
+        {/* 📊 Текущий портфель из БД — на всю ширину */}
+        <CardAtom>
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              marginBottom: spacing[4],
+              flexWrap: "wrap",
+              gap: spacing[2],
+            }}
+          >
+            <h2
+              style={{
+                fontSize: typography.fontSize.xl,
+                fontWeight: typography.fontWeight.semibold,
+                color: colors.neutral[900],
+                fontFamily: typography.fontFamily.sans.join(", "),
+              }}
+            >
+              📊 Текущий портфель
+            </h2>
+            <span
+              style={{
+                fontSize: typography.fontSize.sm,
+                fontWeight: typography.fontWeight.medium,
+                color: colors.neutral[500],
+                fontFamily: typography.fontFamily.sans.join(", "),
+              }}
+            >
+              ${portfolio?.totalValue?.toLocaleString() || "0"}
+            </span>
+          </div>
+
+          <PortfolioPositionsContent
+            loading={loading || loadingTargets}
+            portfolio={portfolio}
+            targetAllocations={targetAllocations}
+          />
+        </CardAtom>
+      </div>
+    </main>
+  );
+}
