@@ -14,6 +14,9 @@ const ALLOWED_EMAIL = process.env.ALLOWED_EMAIL;
 
 export const { auth, handlers, signIn, signOut } = NextAuth({
   trustHost: true,
+  pages: {
+    signIn: "/signin",
+  },
   providers: [
     Google({
       clientId: process.env.AUTH_GOOGLE_ID,
@@ -28,6 +31,13 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
     signIn({ user }) {
       if (!ALLOWED_EMAIL) return true;
       return user.email === ALLOWED_EMAIL;
+    },
+    /**
+     * Route protection: require authentication for all protected routes.
+     * API routes are handled separately in their handlers.
+     */
+    authorized({ auth: session }) {
+      return !!session?.user;
     },
     /**
      * Only include the email in the session token (needed for the gate check
