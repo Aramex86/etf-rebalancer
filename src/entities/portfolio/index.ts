@@ -5,6 +5,7 @@ export {
   savePortfolioRule,
   savePortfolioSnapshot,
   getLatestPortfolioSnapshot,
+  updatePortfolioRulePrices,
 } from "./model/portfolioRepository";
 export type {
   PortfolioRule,

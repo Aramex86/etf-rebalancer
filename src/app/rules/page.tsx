@@ -195,7 +195,7 @@ export default function RulesPage() {
             />
           </CardAtom>
 
-          <PortfolioRulesFeature />
+          <PortfolioRulesFeature portfolio={portfolio} />
         </div>
       </main>
     </>

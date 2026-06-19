@@ -7,7 +7,12 @@ import { CardAtom } from "@/shared/atoms/CardAtom";
 import { BadgeAtom } from "@/shared/atoms/BadgeAtom";
 import { colors, radius, spacing, typography } from "@/shared/ui/tokens";
 import { useIsMobile } from "@/shared/lib/useMediaQuery";
-import { PortfolioRule } from "@/entities/portfolio";
+import {
+  PortfolioRulesTableMolecule,
+  type PortfolioRulesTablePosition,
+  type PortfolioRulesTableRow,
+} from "@/shared/molecules/PortfolioRulesTableMolecule";
+import { PortfolioRule, ParsedPortfolio } from "@/entities/portfolio";
 import {
   fetchPortfolioRules,
   initializeDefaultRules,
@@ -18,36 +23,51 @@ interface EditableRule extends PortfolioRule {
   isDirty: boolean;
 }
 
+interface PortfolioRulesFeatureProps {
+  portfolio?: ParsedPortfolio | null;
+}
+
 function toEditableRules(rules: PortfolioRule[]): EditableRule[] {
   return rules.map((rule) => ({ ...rule, isDirty: false }));
+}
+
+function toTableRows(rules: EditableRule[]): PortfolioRulesTableRow[] {
+  return rules.map((rule) => ({
+    symbol: rule.symbol,
+    name: rule.name,
+    targetWeight: rule.targetWeight,
+    price: rule.price,
+    isDirty: rule.isDirty,
+  }));
+}
+
+function toTablePositions(
+  portfolio: ParsedPortfolio | null | undefined,
+): Record<string, PortfolioRulesTablePosition> | undefined {
+  if (!portfolio || portfolio.totalValue <= 0) return undefined;
+
+  return Object.fromEntries(
+    Object.entries(portfolio.positions).map(([symbol, value]) => [
+      symbol,
+      {
+        value,
+        weight: value / portfolio.totalValue,
+      },
+    ]),
+  );
 }
 
 function formatPercent(value: number): string {
   return `${(value * 100).toFixed(0)}%`;
 }
 
-function parsePercentInput(value: string): number {
-  const cleaned = value.replace(/[^\d.]/g, "");
-  const parsed = Number.parseFloat(cleaned);
-  return Number.isNaN(parsed) ? 0 : parsed / 100;
-}
-
-function formatPrice(value: number | null): string {
-  if (value === null || Number.isNaN(value)) return "";
-  return value.toString();
-}
-
-function parsePriceInput(value: string): number | null {
-  const cleaned = value.replace(/[^\d.]/g, "");
-  const parsed = Number.parseFloat(cleaned);
-  return Number.isNaN(parsed) ? null : parsed;
-}
-
 function calculateTotalWeight(rules: EditableRule[]): number {
   return rules.reduce((sum, rule) => sum + rule.targetWeight, 0);
 }
 
-export function PortfolioRulesFeature() {
+export function PortfolioRulesFeature({
+  portfolio,
+}: PortfolioRulesFeatureProps) {
   const [rules, setRules] = useState<EditableRule[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -206,163 +226,12 @@ export function PortfolioRulesFeature() {
         </div>
       ) : (
         <>
-          <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse" }}>
-              <thead>
-                <tr>
-                  {[
-                    "Тикер",
-                    ...(isMobile ? [] : ["Название"]),
-                    "Целевая доля",
-                    "Цена ($)",
-                    "Статус",
-                  ].map((header) => (
-                    <th
-                      key={header}
-                      style={{
-                        textAlign: "left",
-                        padding: isMobile
-                          ? `${spacing[2]} ${spacing[2]}`
-                          : `${spacing[3]} ${spacing[4]}`,
-                        fontSize: typography.fontSize.sm,
-                        fontWeight: typography.fontWeight.semibold,
-                        color: colors.neutral[600],
-                        borderBottom: `1px solid ${colors.neutral[200]}`,
-                        fontFamily: typography.fontFamily.sans.join(", "),
-                      }}
-                    >
-                      {header}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {rules.map((rule) => (
-                  <tr key={rule.symbol}>
-                    <td
-                      style={{
-                        padding: isMobile
-                          ? `${spacing[2]} ${spacing[2]}`
-                          : `${spacing[3]} ${spacing[4]}`,
-                        borderBottom: `1px solid ${colors.neutral[100]}`,
-                      }}
-                    >
-                      <span
-                        style={{
-                          fontFamily: typography.fontFamily.mono.join(", "),
-                          fontWeight: typography.fontWeight.semibold,
-                          fontSize: typography.fontSize.base,
-                          color: colors.neutral[900],
-                        }}
-                      >
-                        {rule.symbol}
-                      </span>
-                    </td>
-                    {!isMobile && (
-                      <td
-                        style={{
-                          padding: `${spacing[3]} ${spacing[4]}`,
-                          borderBottom: `1px solid ${colors.neutral[100]}`,
-                        }}
-                      >
-                        <input
-                          type="text"
-                          value={rule.name}
-                          onChange={(e) =>
-                            updateRule(rule.symbol, { name: e.target.value })
-                          }
-                          style={{
-                            width: "100%",
-                            padding: spacing[2],
-                            fontSize: typography.fontSize.sm,
-                            fontFamily: typography.fontFamily.sans.join(", "),
-                            color: colors.neutral[700],
-                            border: `1px solid ${colors.neutral[200]}`,
-                            borderRadius: radius.sm,
-                            backgroundColor: colors.neutral[0],
-                          }}
-                        />
-                      </td>
-                    )}
-                    <td
-                      style={{
-                        padding: isMobile
-                          ? `${spacing[2]} ${spacing[2]}`
-                          : `${spacing[3]} ${spacing[4]}`,
-                        borderBottom: `1px solid ${colors.neutral[100]}`,
-                      }}
-                    >
-                      <input
-                        type="text"
-                        inputMode="decimal"
-                        value={`${(rule.targetWeight * 100).toFixed(0)}%`}
-                        onChange={(e) =>
-                          updateRule(rule.symbol, {
-                            targetWeight: parsePercentInput(e.target.value),
-                          })
-                        }
-                        style={{
-                          width: isMobile ? "64px" : "80px",
-                          padding: spacing[2],
-                          fontSize: typography.fontSize.base,
-                          fontFamily: typography.fontFamily.mono.join(", "),
-                          color: colors.neutral[900],
-                          border: `1px solid ${colors.neutral[200]}`,
-                          borderRadius: radius.sm,
-                          backgroundColor: colors.neutral[0],
-                          textAlign: "right",
-                        }}
-                      />
-                    </td>
-                    <td
-                      style={{
-                        padding: isMobile
-                          ? `${spacing[2]} ${spacing[2]}`
-                          : `${spacing[3]} ${spacing[4]}`,
-                        borderBottom: `1px solid ${colors.neutral[100]}`,
-                      }}
-                    >
-                      <input
-                        type="text"
-                        inputMode="decimal"
-                        value={formatPrice(rule.price)}
-                        onChange={(e) =>
-                          updateRule(rule.symbol, {
-                            price: parsePriceInput(e.target.value),
-                          })
-                        }
-                        style={{
-                          width: isMobile ? "72px" : "100px",
-                          padding: spacing[2],
-                          fontSize: typography.fontSize.base,
-                          fontFamily: typography.fontFamily.mono.join(", "),
-                          color: colors.neutral[900],
-                          border: `1px solid ${colors.neutral[200]}`,
-                          borderRadius: radius.sm,
-                          backgroundColor: colors.neutral[0],
-                          textAlign: "right",
-                        }}
-                      />
-                    </td>
-                    <td
-                      style={{
-                        padding: isMobile
-                          ? `${spacing[2]} ${spacing[2]}`
-                          : `${spacing[3]} ${spacing[4]}`,
-                        borderBottom: `1px solid ${colors.neutral[100]}`,
-                      }}
-                    >
-                      {rule.isDirty ? (
-                        <BadgeAtom variant="warning">изменено</BadgeAtom>
-                      ) : (
-                        <BadgeAtom variant="success">сохранено</BadgeAtom>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <PortfolioRulesTableMolecule
+            rules={toTableRows(rules)}
+            positions={toTablePositions(portfolio)}
+            isMobile={isMobile}
+            onUpdateRule={updateRule}
+          />
 
           {error && (
             <div

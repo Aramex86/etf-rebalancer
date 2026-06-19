@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { parseScreenshot, savePortfolioSnapshot } from "@/entities/portfolio";
+import {
+  parseScreenshot,
+  savePortfolioSnapshot,
+  updatePortfolioRulePrices,
+} from "@/entities/portfolio";
 
 export async function POST(req: NextRequest) {
   try {
@@ -25,6 +29,15 @@ export async function POST(req: NextRequest) {
       portfolio.shares,
     );
     console.log("[parse-portfolio] Snapshot saved, id:", snapshotId);
+
+    // 🔄 Обновляем цены в правилах, чтобы расчёты шли по актуальным ценам
+    if (portfolio.prices && Object.keys(portfolio.prices).length > 0) {
+      await updatePortfolioRulePrices(portfolio.prices);
+      console.log(
+        "[parse-portfolio] Updated prices for:",
+        Object.keys(portfolio.prices).join(", "),
+      );
+    }
 
     return NextResponse.json({ portfolio });
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
