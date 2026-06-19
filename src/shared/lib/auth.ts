@@ -10,7 +10,8 @@ import Google from "next-auth/providers/google";
  * If set, only this Google account can log in.
  * If unset, any Google account is accepted (still OAuth-gated).
  */
-const ALLOWED_EMAIL = process.env.ALLOWED_EMAIL;
+const ALLOWED_EMAILS =
+  process.env.ALLOWED_EMAIL?.split(",").map((e) => e.trim()) ?? [];
 
 export const { auth, handlers, signIn, signOut } = NextAuth({
   trustHost: true,
@@ -29,8 +30,8 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
      * authenticated email doesn't match.
      */
     signIn({ user }) {
-      if (!ALLOWED_EMAIL) return true;
-      return user.email === ALLOWED_EMAIL;
+      if (ALLOWED_EMAILS.length === 0) return true;
+      return ALLOWED_EMAILS.includes(user.email ?? "");
     },
     /**
      * Route protection: require authentication for all protected routes.
