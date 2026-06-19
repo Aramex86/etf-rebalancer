@@ -7,6 +7,7 @@ import { CalculateAllocationFeature } from "@/features/calculate-allocation";
 import { ParsedPortfolio } from "@/features/portfolio-upload";
 import { ButtonAtom } from "@/shared/atoms/ButtonAtom";
 import { PortfolioPositionMolecule } from "@/shared/molecules/PortfolioPositionMolecule";
+import { UserMenuMolecule } from "@/shared/molecules/UserMenuMolecule";
 import { CardAtom } from "@/shared/atoms/CardAtom";
 import { colors, spacing, typography } from "@/shared/ui/tokens";
 
@@ -61,6 +62,8 @@ function PortfolioPositionsContent({
   );
 }
 
+export const dynamic = "force-dynamic";
+
 export default function DashboardPage() {
   const [amount, setAmount] = useState(0);
   const [calculationTrigger, setCalculationTrigger] = useState(0);
@@ -104,109 +107,123 @@ export default function DashboardPage() {
   }, []);
 
   return (
-    <main
-      style={{
-        minHeight: "100vh",
-        backgroundColor: colors.neutral[50],
-        padding: `${spacing[6]} ${spacing[4]}`,
-      }}
-    >
-      <div
+    <div style={{ minHeight: "100vh" }}>
+      <header
         style={{
-          width: "100%",
-          margin: "0 auto",
-          display: "grid",
-          gridTemplateColumns: "1fr",
-          gap: spacing[4],
+          display: "flex",
+          justifyContent: "flex-end",
+          alignItems: "center",
+          padding: `${spacing[2]} ${spacing[4]}`,
+          borderBottom: `1px solid ${colors.neutral[200]}`,
+          backgroundColor: colors.neutral[0],
+        }}
+      >
+        <UserMenuMolecule />
+      </header>
+      <main
+        style={{
+          minHeight: "calc(100vh - 60px)",
+          backgroundColor: colors.neutral[50],
+          padding: `${spacing[6]} ${spacing[4]}`,
         }}
       >
         <div
           style={{
-            display: "flex",
-            justifyContent: "flex-end",
-            alignItems: "center",
-          }}
-        >
-          <Link href="/rules">
-            <ButtonAtom variant="secondary" size="sm">
-              ⚙️ Правила портфеля
-            </ButtonAtom>
-          </Link>
-        </div>
-
-        <div
-          style={{
-            display: "flex",
-            flexWrap: "wrap",
+            width: "100%",
+            margin: "0 auto",
+            display: "grid",
+            gridTemplateColumns: "1fr",
             gap: spacing[4],
-            alignItems: "start",
           }}
         >
-          <div
-            style={{
-              flex: "1 1 300px",
-              minWidth: "280px",
-              display: "grid",
-              gap: spacing[4],
-            }}
-          >
-            <CalculateAllocationFeature
-              amount={amount}
-              onAmountChange={setAmount}
-              onCalculate={handleCalculate}
-              portfolio={portfolio || undefined}
-            />
-          </div>
-          <div style={{ flex: "1 1 300px", minWidth: "280px" }}>
-            <AIExplanationFeature
-              amount={amount}
-              trigger={calculationTrigger}
-              portfolio={portfolio}
-            />
-          </div>
-        </div>
-
-        {/* 📊 Текущий портфель из БД — на всю ширину */}
-        <CardAtom>
           <div
             style={{
               display: "flex",
-              justifyContent: "space-between",
+              justifyContent: "flex-end",
               alignItems: "center",
-              marginBottom: spacing[4],
-              flexWrap: "wrap",
-              gap: spacing[2],
             }}
           >
-            <h2
-              style={{
-                fontSize: typography.fontSize.xl,
-                fontWeight: typography.fontWeight.semibold,
-                color: colors.neutral[900],
-                fontFamily: typography.fontFamily.sans.join(", "),
-              }}
-            >
-              📊 Текущий портфель
-            </h2>
-            <span
-              style={{
-                fontSize: typography.fontSize.sm,
-                fontWeight: typography.fontWeight.medium,
-                color: colors.neutral[500],
-                fontFamily: typography.fontFamily.sans.join(", "),
-              }}
-            >
-              ${portfolio?.totalValue?.toLocaleString() || "0"}
-            </span>
+            <Link href="/rules">
+              <ButtonAtom variant="secondary" size="sm">
+                ⚙️ Правила портфеля
+              </ButtonAtom>
+            </Link>
           </div>
 
-          <PortfolioPositionsContent
-            loading={loading || loadingTargets}
-            portfolio={portfolio}
-            targetAllocations={targetAllocations}
-          />
-        </CardAtom>
-      </div>
-    </main>
+          <div
+            style={{
+              display: "flex",
+              flexWrap: "wrap",
+              gap: spacing[4],
+              alignItems: "start",
+            }}
+          >
+            <div
+              style={{
+                flex: "1 1 300px",
+                minWidth: "280px",
+                display: "grid",
+                gap: spacing[4],
+              }}
+            >
+              <CalculateAllocationFeature
+                amount={amount}
+                onAmountChange={setAmount}
+                onCalculate={handleCalculate}
+                portfolio={portfolio || undefined}
+              />
+            </div>
+            <div style={{ flex: "1 1 300px", minWidth: "280px" }}>
+              <AIExplanationFeature
+                amount={amount}
+                trigger={calculationTrigger}
+                portfolio={portfolio}
+              />
+            </div>
+          </div>
+
+          {/* 📊 Текущий портфель из БД — на всю ширину */}
+          <CardAtom>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: spacing[4],
+                flexWrap: "wrap",
+                gap: spacing[2],
+              }}
+            >
+              <h2
+                style={{
+                  fontSize: typography.fontSize.xl,
+                  fontWeight: typography.fontWeight.semibold,
+                  color: colors.neutral[900],
+                  fontFamily: typography.fontFamily.sans.join(", "),
+                }}
+              >
+                📊 Текущий портфель
+              </h2>
+              <span
+                style={{
+                  fontSize: typography.fontSize.sm,
+                  fontWeight: typography.fontWeight.medium,
+                  color: colors.neutral[500],
+                  fontFamily: typography.fontFamily.sans.join(", "),
+                }}
+              >
+                ${portfolio?.totalValue?.toLocaleString() || "0"}
+              </span>
+            </div>
+
+            <PortfolioPositionsContent
+              loading={loading || loadingTargets}
+              portfolio={portfolio}
+              targetAllocations={targetAllocations}
+            />
+          </CardAtom>
+        </div>
+      </main>
+    </div>
   );
 }

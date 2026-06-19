@@ -8,6 +8,7 @@ import {
   ParsedPortfolio,
 } from "@/features/portfolio-upload";
 import { PortfolioPositionMolecule } from "@/shared/molecules/PortfolioPositionMolecule";
+import { UserMenuMolecule } from "@/shared/molecules/UserMenuMolecule";
 import { CardAtom } from "@/shared/atoms/CardAtom";
 import { ButtonAtom } from "@/shared/atoms/ButtonAtom";
 import { colors, spacing, typography } from "@/shared/ui/tokens";
@@ -106,77 +107,97 @@ export default function RulesPage() {
   }, []);
 
   return (
-    <main
-      style={{
-        minHeight: "100vh",
-        backgroundColor: colors.neutral[50],
-        padding: isMobile
-          ? `${spacing[3]} ${spacing[2]}`
-          : `${spacing[6]} ${spacing[4]}`,
-      }}
-    >
-      <div
+    <>
+      <header
         style={{
-          width: "100%",
-          margin: "0 auto",
-          display: "grid",
-          gridTemplateColumns: "1fr",
-          gap: spacing[4],
+          display: "flex",
+          justifyContent: "flex-end",
+          alignItems: "center",
+          padding: `${spacing[2]} ${spacing[4]}`,
+          borderBottom: `1px solid ${colors.neutral[200]}`,
+          backgroundColor: colors.neutral[0],
         }}
       >
-        <div style={{ display: "flex", justifyContent: "flex-start" }}>
-          <Link href="/dashboard">
-            <ButtonAtom variant="secondary" size="sm">
-              ← Назад
-            </ButtonAtom>
-          </Link>
-        </div>
-
-        <PortfolioUploadFeature onPortfolioParsed={handlePortfolioParsed} />
-
-        {/* 📊 Текущий портфель из БД */}
-        <CardAtom>
+        <UserMenuMolecule />
+      </header>
+      <main
+        style={{
+          minHeight: "100vh",
+          backgroundColor: colors.neutral[50],
+          padding: isMobile
+            ? `${spacing[3]} ${spacing[2]}`
+            : `${spacing[6]} ${spacing[4]}`,
+        }}
+      >
+        <div
+          style={{
+            width: "100%",
+            margin: "0 auto",
+            display: "grid",
+            gridTemplateColumns: "1fr",
+            gap: spacing[4],
+          }}
+        >
           <div
             style={{
               display: "flex",
-              justifyContent: "space-between",
-              alignItems: isMobile ? "flex-start" : "center",
-              flexDirection: isMobile ? "column" : "row",
-              gap: isMobile ? spacing[1] : 0,
-              marginBottom: spacing[4],
+              justifyContent: "flex-end",
+              alignItems: "center",
             }}
           >
-            <h2
-              style={{
-                fontSize: typography.fontSize.xl,
-                fontWeight: typography.fontWeight.semibold,
-                color: colors.neutral[900],
-                fontFamily: typography.fontFamily.sans.join(", "),
-              }}
-            >
-              📊 Текущий портфель
-            </h2>
-            <span
-              style={{
-                fontSize: typography.fontSize.sm,
-                fontWeight: typography.fontWeight.medium,
-                color: colors.neutral[500],
-                fontFamily: typography.fontFamily.sans.join(", "),
-              }}
-            >
-              ${portfolio?.totalValue?.toLocaleString() || "0"}
-            </span>
+            <Link href="/dashboard">
+              <ButtonAtom variant="secondary" size="sm">
+                ← Назад
+              </ButtonAtom>
+            </Link>
           </div>
 
-          <PortfolioPositionsContent
-            loading={loading || loadingTargets}
-            portfolio={portfolio}
-            targetAllocations={targetAllocations}
-          />
-        </CardAtom>
+          <PortfolioUploadFeature onPortfolioParsed={handlePortfolioParsed} />
 
-        <PortfolioRulesFeature />
-      </div>
-    </main>
+          {/* 📊 Текущий портфель из БД */}
+          <CardAtom>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: isMobile ? "flex-start" : "center",
+                flexDirection: isMobile ? "column" : "row",
+                gap: isMobile ? spacing[1] : 0,
+                marginBottom: spacing[4],
+              }}
+            >
+              <h2
+                style={{
+                  fontSize: typography.fontSize.xl,
+                  fontWeight: typography.fontWeight.semibold,
+                  color: colors.neutral[900],
+                  fontFamily: typography.fontFamily.sans.join(", "),
+                }}
+              >
+                📊 Текущий портфель
+              </h2>
+              <span
+                style={{
+                  fontSize: typography.fontSize.sm,
+                  fontWeight: typography.fontWeight.medium,
+                  color: colors.neutral[500],
+                  fontFamily: typography.fontFamily.sans.join(", "),
+                }}
+              >
+                ${portfolio?.totalValue?.toLocaleString() || "0"}
+              </span>
+            </div>
+
+            <PortfolioPositionsContent
+              loading={loading || loadingTargets}
+              portfolio={portfolio}
+              targetAllocations={targetAllocations}
+            />
+          </CardAtom>
+
+          <PortfolioRulesFeature />
+        </div>
+      </main>
+    </>
   );
 }
