@@ -75,6 +75,8 @@ export function PortfolioRulesFeature({
   const [success, setSuccess] = useState<string | null>(null);
   const isMobile = useIsMobile();
 
+  console.log("rules", isMobile);
+
   useEffect(() => {
     loadRules();
   }, []);
@@ -279,6 +281,7 @@ export function PortfolioRulesFeature({
               onClick={handleSave}
               disabled={saving || dirtyCount === 0 || !isWeightValid}
               size="md"
+              fullWidth
             >
               💾 Сохранить изменения
             </ButtonAtom>
@@ -288,6 +291,7 @@ export function PortfolioRulesFeature({
               onClick={handleResetToDefaults}
               disabled={saving}
               size="md"
+              fullWidth
             >
               🔄 Сбросить к умолчанию
             </ButtonAtom>
