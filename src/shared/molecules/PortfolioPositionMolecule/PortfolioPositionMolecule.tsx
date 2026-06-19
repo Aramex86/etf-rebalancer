@@ -148,7 +148,7 @@ export const PortfolioPositionMolecule = ({
           fontFamily: typography.fontFamily.sans.join(", "),
         }}
       >
-        <span>
+        <span style={{ color: colors.neutral[900] }}>
           {weight.toFixed(1)}%
           {newWeight !== undefined && (
             <span
@@ -162,7 +162,9 @@ export const PortfolioPositionMolecule = ({
             </span>
           )}
         </span>
-        <span>Цель {targetWeight.toFixed(0)}%</span>
+        <span style={{ color: colors.neutral[900] }}>
+          Цель {targetWeight.toFixed(0)}%
+        </span>
       </div>
     </div>
   );

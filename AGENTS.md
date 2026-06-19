@@ -197,9 +197,13 @@ When a screenshot is parsed, prices and shares are extracted and saved to `portf
 ### 6. Authentication
 
 - **Input:** Google OAuth sign-in (via Auth.js v5 / NextAuth)
-- **Logic:** Middleware protects all routes; unauthenticated users redirected to Google sign-in. Optional `ALLOWED_EMAIL` env var restricts login to a single Google account (single-user gate).
+- **Logic:**
+  - `middleware.ts` protects all routes via the Auth.js `authorized` callback.
+  - Unauthenticated users are redirected to `/signin`.
+  - `/api/auth/*` routes are excluded from the middleware matcher so NextAuth's own API endpoints (session, providers, callback, etc.) are not intercepted.
+  - Optional `ALLOWED_EMAIL` env var restricts login to a single Google account (single-user gate). If unset, any Google account can sign in.
 - **Output:** Authenticated session with user avatar/name in the top bar; logout button
-- **Location:** Global header (`UserMenuMolecule` in root layout)
+- **Location:** Per-page header (`UserMenuMolecule` in `DashboardPage` and `/rules` page). The `/signin` page has no header.
 
 ## API Endpoints
 
@@ -298,6 +302,14 @@ ALLOWED_EMAIL=your_email@gmail.com
 # Optional — app base URL (auto-detected on Vercel, set for local dev)
 NEXTAUTH_URL=http://localhost:3000
 
+# Google Cloud Console OAuth settings
+# Authorized JavaScript origins:
+#   - http://localhost:3000
+#   - https://<your-vercel-domain>.vercel.app
+# Authorized redirect URIs:
+#   - http://localhost:3000/api/auth/callback/google
+#   - https://<your-vercel-domain>.vercel.app/api/auth/callback/google
+
 # Optional (v1.1)
 TAVILY_API_KEY=your_tavily_key
 LANGFUSE_PUBLIC_KEY=your_langfuse_public_key
@@ -322,6 +334,7 @@ src/
 │   └── rules/page.tsx                 # Rules + upload page
 │
 ├── pages/
+│   ├── _app.tsx                       # Pages Router SessionProvider wrapper
 │   └── dashboard/
 │       ├── DashboardPage.tsx          # Main dashboard (input + portfolio + AI)
 │       └── index.ts
@@ -375,6 +388,8 @@ src/
     │   ├── migrations.ts             # Schema creation + ALTER TABLE
     │   ├── ollama.ts                  # Ollama configuration
     │   └── useMediaQuery.ts           # SSR-safe responsive hook (useIsMobile)
+    │
+    ├── middleware.ts                  # Auth.js route protection; excludes /api/auth/*
     └── ui/tokens/
         ├── breakpoints.ts
         ├── colors.ts
@@ -477,6 +492,9 @@ Target allocations are stored in the `portfolio_rules` table and loaded at runti
 - Dashboard loads latest snapshot from DB automatically
 - Mobile-friendly responsive layout
 - Authentication via Auth.js v5 (Google OAuth, single-user gate, middleware protection)
+- Custom `/signin` page without header
+- `UserMenuMolecule` logout button on protected pages
+- Middleware excludes `/api/auth/*` to prevent Auth.js endpoint interception
 
 ### 🔄 In Progress
 
@@ -486,9 +504,10 @@ Target allocations are stored in the `portfolio_rules` table and loaded at runti
 
 - Web search for news (Tavily)
 - RAG with pgvector
-- Deploy to Vercel
 - Monitoring with Langfuse
 - Yahoo Finance price auto-update
+
+> **Note:** Vercel deployment requires adding all environment variables in the Vercel dashboard and updating Google Cloud Console OAuth origins/redirect URIs for the production domain.
 
 ## Important Constraints
 

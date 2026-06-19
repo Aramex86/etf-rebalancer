@@ -49,6 +49,19 @@ export async function deletePortfolioRule(symbol: string): Promise<void> {
   await query("DELETE FROM portfolio_rules WHERE symbol = $1", [symbol]);
 }
 
+export async function updatePortfolioRulePrices(
+  prices: Record<string, number>,
+): Promise<void> {
+  for (const [symbol, price] of Object.entries(prices)) {
+    await query(
+      `UPDATE portfolio_rules
+       SET price = $1, updated_at = NOW()
+       WHERE symbol = $2`,
+      [price, symbol],
+    );
+  }
+}
+
 export interface PortfolioSnapshot {
   id: number;
   totalValue: number;
