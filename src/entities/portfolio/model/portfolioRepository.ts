@@ -32,6 +32,35 @@ export async function getTargetAllocations(): Promise<Record<string, number>> {
   );
 }
 
+/**
+ * Get prices for all ETFs from portfolio_rules.
+ * Only includes rules where price is not null.
+ */
+export async function getRulePrices(): Promise<Record<string, number>> {
+  const rules = await getPortfolioRules();
+  const prices: Record<string, number> = {};
+  for (const rule of rules) {
+    if (rule.price !== null && rule.price > 0) {
+      prices[rule.symbol] = rule.price;
+    }
+  }
+  return prices;
+}
+
+/**
+ * Get prices from the latest portfolio snapshot.
+ * Falls back to rule prices if snapshot has no prices.
+ */
+export async function getLatestSnapshotPrices(): Promise<
+  Record<string, number>
+> {
+  const snapshot = await getLatestPortfolioSnapshot();
+  if (snapshot && Object.keys(snapshot.prices).length > 0) {
+    return snapshot.prices;
+  }
+  return getRulePrices();
+}
+
 export async function savePortfolioRule(rule: PortfolioRule): Promise<void> {
   await query(
     `INSERT INTO portfolio_rules (symbol, name, target_weight, price, updated_at)

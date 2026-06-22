@@ -5,6 +5,7 @@ import { createOpenAI } from "@ai-sdk/openai";
 import { calculateAllocationTool } from "@/entities/etf/model/allocationTool";
 import { ollamaConfig } from "@/shared/lib/ollama";
 import { mastraConfig } from "@/shared/lib/mastra";
+import { predictionConfig } from "@/shared/lib/predictionConfig";
 
 const ollama = createOpenAI(ollamaConfig);
 
@@ -20,7 +21,7 @@ export const rebalancingAgent = new Agent({
 
 Будь кратким и конкретным.`,
 
-  model: ollama("qwen3-coder:480b"),
+  model: ollama(predictionConfig.ollama.explanationModel),
   tools: {
     calculate_allocation: calculateAllocationTool,
   },

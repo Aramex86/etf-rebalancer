@@ -21,7 +21,7 @@ allocations and rules, and generates AI explanations for the recommendations.
 - **LLM Provider**: Ollama Cloud (OpenAI-compatible API)
 - **Integration**: Direct `fetch()` to Ollama Cloud (AI SDK v5 removed due to incompatibility)
 - **Models**:
-  - `qwen3-coder:480b` — text generation (allocation explanations)
+  - `qwen3-coder:480b` — text generation (allocation explanations + price predictions)
   - `gemma4:31b-cloud` — vision model (screenshot parsing)
 
 ### Data & Storage
@@ -91,6 +91,52 @@ shared/     ← Reusable utilities, UI-kit
 | `prices`      | JSONB              | `{ symbol: price }` (added via ALTER)      |
 | `shares`      | JSONB              | `{ symbol: shareCount }` (added via ALTER) |
 | `created_at`  | TIMESTAMP          | Snapshot time                              |
+
+### `watchlist`
+
+| Column         | Type               | Description                          |
+| -------------- | ------------------ | ------------------------------------ |
+| `id`           | SERIAL PRIMARY KEY | Auto-generated ID                    |
+| `symbol`       | TEXT UNIQUE        | ETF ticker (e.g. `SWRD`)             |
+| `yahoo_symbol` | TEXT               | Yahoo Finance ticker (e.g. `SWRD.L`) |
+| `name`         | TEXT               | Human-readable ETF name              |
+| `category`     | TEXT               | Category (stock, bond, gold, etc.)   |
+| `currency`     | TEXT               | Currency code (USD, EUR)             |
+| `dist_policy`  | TEXT               | `acc` or `dist` (CHECK constraint)   |
+| `alternatives` | TEXT[]             | Array of alternative ETF symbols     |
+| `is_active`    | BOOLEAN            | Whether the ETF is actively tracked  |
+
+### `price_history`
+
+| Column   | Type               | Description       |
+| -------- | ------------------ | ----------------- |
+| `id`     | SERIAL PRIMARY KEY | Auto-generated ID |
+| `symbol` | TEXT               | ETF ticker        |
+| `date`   | DATE               | Price date        |
+| `close`  | DECIMAL(10,4)      | Closing price     |
+
+Unique constraint on `(symbol, date)`.
+
+### `predictions`
+
+| Column                     | Type               | Description                           |
+| -------------------------- | ------------------ | ------------------------------------- |
+| `id`                       | SERIAL PRIMARY KEY | Auto-generated ID                     |
+| `symbol`                   | TEXT               | ETF ticker                            |
+| `target_date`              | DATE               | Date the prediction targets           |
+| `horizon_days`             | INTEGER            | Prediction horizon (7)                |
+| `current_price`            | DECIMAL(10,4)      | Price at prediction time              |
+| `predicted_price`          | DECIMAL(10,4)      | LLM-predicted price                   |
+| `direction`                | TEXT               | `up`, `down`, or `flat`               |
+| `signal`                   | TEXT               | `buy`, `sell`, or `hold`              |
+| `after_tax_return_pct`     | DECIMAL(8,4)       | After-tax return percentage           |
+| `baseline_predicted_price` | DECIMAL(10,4)      | SMA-drift baseline price              |
+| `actual_price`             | DECIMAL(10,4)      | Actual price (filled on verification) |
+| `direction_correct`        | BOOLEAN            | Whether direction was correct         |
+| `error_pct`                | DECIMAL(8,4)       | Percentage error                      |
+| `mape`                     | DECIMAL(8,4)       | Mean Absolute Percentage Error        |
+| `verified_at`              | TIMESTAMP          | Verification timestamp                |
+| `created_at`               | TIMESTAMP          | Prediction creation time              |
 
 ## Domain Model
 
@@ -194,7 +240,23 @@ When a screenshot is parsed, prices and shares are extracted and saved to `portf
 - **Logic:** Search via Tavily API
 - **Output:** News summary + market context
 
-### 6. Authentication
+### 6. Prediction Agent
+
+- **Input:** Watchlist of 7 UCITS ETFs (SWRD, EIMI, DPYA, VDTA, LQDA, IDVY, GLDM)
+- **Logic:**
+  1. Fetch 30-day price history from Yahoo Finance (cached in `price_history` table)
+  2. Compute indicators (SMA7, SMA14, volatility, high30, low30)
+  3. LLM prediction (`qwen3-coder:480b`) — 7-day price forecast with reasoning
+  4. Calculate after-tax return for Moldova resident (12% capital gains, 15% withholding for dist ETFs)
+  5. Generate Buy/Sell/Hold signal based on direction + after-tax return
+  6. Compare alternatives (threshold: 0.5% improvement)
+  7. Baseline: SMA-drift model for accuracy comparison
+  8. Verification: compare past predictions against actual prices, track accuracy + MAPE
+- **Output:** Predictions table with signal badges, accuracy stats, reasoning (collapsible)
+- **Location:** `/predictions` page (desktop table + mobile cards)
+- **Tables:** `watchlist`, `price_history`, `predictions`
+
+### 7. Authentication
 
 - **Input:** Google OAuth sign-in (via Auth.js v5 / NextAuth)
 - **Logic:**
@@ -202,8 +264,8 @@ When a screenshot is parsed, prices and shares are extracted and saved to `portf
   - Unauthenticated users are redirected to `/signin`.
   - `/api/auth/*` routes are excluded from the middleware matcher so NextAuth's own API endpoints (session, providers, callback, etc.) are not intercepted.
   - Optional `ALLOWED_EMAIL` env var restricts login to a single Google account (single-user gate). If unset, any Google account can sign in.
-- **Output:** Authenticated session with user avatar/name in the top bar; logout button
-- **Location:** Per-page header (`UserMenuMolecule` in `DashboardPage` and `/rules` page). The `/signin` page has no header.
+- **Output:** Authenticated session with user avatar/name in the top bar; dropdown menu with navigation links
+- **Location:** Per-page header (`UserMenuMolecule` dropdown in `DashboardPage`, `/rules`, and `/predictions` pages). The `/signin` page has no header.
 
 ## API Endpoints
 
@@ -281,6 +343,64 @@ Accepts base64 image, calls vision LLM, parses portfolio, saves snapshot to DB.
 
 Returns the latest saved snapshot (or `null` if none exists).
 
+### POST /api/init-watchlist
+
+One-time seed of the 7-ETF watchlist from `WATCHLIST_SEED`. Idempotent (upsert).
+
+### GET /api/market-data?symbol=SWRD&days=30&force=false
+
+Fetches price history for a symbol. Cache-first: returns from `price_history` table if fresh, otherwise fetches from Yahoo Finance and saves to DB.
+
+**Query params:**
+
+- `symbol` (required) — ETF ticker (e.g. `SWRD`)
+- `days` (default 30) — number of days of history
+- `force` (default false) — bypass cache and fetch from Yahoo
+
+**Response:**
+
+```json
+{
+  "symbol": "SWRD",
+  "prices": [{ "date": "2025-05-23", "close": 52.43 }, ...],
+  "source": "cache"
+}
+```
+
+### POST /api/predictions
+
+Runs the full prediction pipeline for all active watchlist ETFs: fetch history → compute indicators → LLM prediction → after-tax return → signal → alternatives → save to DB.
+
+**Response:**
+
+```json
+{
+  "predictions": [{ "symbol": "SWRD", "predictedPrice": 53.1, "signal": "buy", ... }],
+  "count": 7,
+  "savedIds": [1, 2, 3, ...]
+}
+```
+
+### GET /api/predictions?limit=50
+
+Returns the latest prediction per symbol (DISTINCT ON symbol) with accuracy stats.
+
+### POST /api/predictions/verify
+
+Verifies unverified predictions against actual prices (from DB or Yahoo fallback). Updates `predictions` table with `actual_price`, `direction_correct`, `error_pct`, `mape`.
+
+**Response:**
+
+```json
+{
+  "verified": 5,
+  "accuracy": 0.6,
+  "avgMape": 2.35,
+  "directionCorrect": 3,
+  "total": 5
+}
+```
+
 ## Environment Variables
 
 ```bash
@@ -327,11 +447,16 @@ src/
 │   │   ├── init-rules/route.ts        # Seed default rules
 │   │   ├── parse-portfolio/route.ts   # Vision LLM screenshot parser
 │   │   ├── portfolio-rules/route.ts   # CRUD for rules
-│   │   └── portfolio-snapshot/route.ts # GET latest snapshot
+│   │   ├── portfolio-snapshot/route.ts # GET latest snapshot
+│   │   ├── init-watchlist/route.ts    # Seed 7-ETF watchlist
+│   │   ├── market-data/route.ts       # Yahoo Finance price history (cache-first)
+│   │   ├── predictions/route.ts       # POST pipeline + GET latest predictions
+│   │   └── predictions/verify/route.ts # Verify past predictions
 │   ├── globals.css
 │   ├── layout.tsx
 │   ├── page.tsx
-│   └── rules/page.tsx                 # Rules + upload page
+│   ├── rules/page.tsx                 # Rules + upload page
+│   └── predictions/page.tsx           # Prediction agent page
 │
 ├── pages/
 │   ├── _app.tsx                       # Pages Router SessionProvider wrapper
@@ -354,6 +479,15 @@ src/
 │   └── portfolio-upload/
 │       ├── api/parse.ts               # Screenshot parsing logic
 │       └── ui/PortfolioUploadFeature.tsx
+│   └── predictions/
+│       ├── agent.ts                   # Mastra Agent (tools composition)
+│       ├── api/predictions.ts         # Client wrapper: fetch/create predictions
+│       ├── api/verify.ts              # Client wrapper: verify predictions
+│       ├── api/marketData.ts          # Client wrapper: fetch market data
+│       ├── ui/PredictionHeaderMolecule.tsx  # Header + action buttons + disclaimer
+│       ├── ui/PredictionTableMolecule.tsx   # Desktop table (9 columns, sortable)
+│       ├── ui/PredictionCardMolecule.tsx    # Mobile card (compact grid)
+│       └── ui/PredictionsFeature.tsx        # Feature composition (desktop/mobile)
 │
 ├── entities/
 │   ├── etf/
@@ -362,11 +496,34 @@ src/
 │   │       ├── etfTypes.ts            # TypeScript interfaces
 │   │       ├── etfRules.ts            # Pure business logic (calculateAllocation)
 │   │       └── allocationTool.ts      # Mastra Tool (legacy)
-│   └── portfolio/
+│   ├── portfolio/
+│   │   ├── index.ts                   # Public API
+│   │   └── model/
+│   │       ├── portfolioRepository.ts # DB CRUD for rules + snapshots
+│   │       └── parseScreenshotTool.ts # Vision LLM tool definition
+│   ├── market-data/
+│   │   ├── index.ts                   # Public API
+│   │   └── model/
+│   │       ├── watchlistRepository.ts # DB CRUD for watchlist
+│   │       ├── watchlistSeed.ts       # 7-ETF seed data (yahoo_symbol, alternatives)
+│   │       ├── priceHistoryRepository.ts # DB CRUD for price_history
+│   │       ├── yahooFinanceClient.ts  # Yahoo Finance API client (fetch + retry)
+│   │       ├── yahooHistoryTool.ts    # Mastra Tool: get-price-history
+│   │       └── marketDataTypes.ts     # YahooFinanceError, YahooRange types
+│   └── prediction/
 │       ├── index.ts                   # Public API
 │       └── model/
-│           ├── portfolioRepository.ts # DB CRUD for rules + snapshots
-│           └── parseScreenshotTool.ts # Vision LLM tool definition
+│           ├── predictionRepository.ts    # DB CRUD for predictions
+│           ├── predictionBaselines.ts     # randomWalk + smaDrift baselines
+│           ├── predictionTypes.ts         # PredictionInput, LLMResponse, PredictionResult
+│           ├── predictionTax.ts           # After-tax return (Moldova 12% + withholding)
+│           ├── predictionSignals.ts       # Buy/Sell/Hold signal + labels + colors
+│           ├── predictionEngine.ts        # LLM prediction (callOllamaChat)
+│           ├── predictionEngineTool.ts    # Mastra Tool: predict-price
+│           ├── predictionTaxTool.ts       # Mastra Tool: calc-after-tax-return
+│           ├── predictionSignalTool.ts    # Mastra Tool: calc-signal
+│           ├── predictionAlternatives.ts  # findBestAlternative (0.5% threshold)
+│           └── predictionAccuracy.ts      # verifyPrediction + calcAccuracyStats
 │
 └── shared/
     ├── atoms/
@@ -379,14 +536,15 @@ src/
 │   ├── AIExplanationMolecule/
 │   ├── PortfolioPositionMolecule/   # ETF card with Excel-style row (Кол-во/Цена/Сумма)
 │   ├── RecommendationItemMolecule/
-│   └── UserMenuMolecule/             # Login/logout + user avatar (Google OAuth)
+│   └── UserMenuMolecule/             # Dropdown menu: Dashboard/Rules/Predictions/Sign out (Google OAuth)
     ├── lib/
     │   ├── auth.ts                   # Auth.js v5 config (Google provider, single-user gate)
     │   ├── SessionProvider.tsx       # Client-side session context wrapper
     │   ├── db.ts                      # PostgreSQL pool (pg)
     │   ├── mastra.ts                  # Mastra instance factory
-    │   ├── migrations.ts             # Schema creation + ALTER TABLE
-    │   ├── ollama.ts                  # Ollama configuration
+    │   ├── migrations.ts             # Schema creation + ALTER TABLE (rules, snapshots, watchlist, price_history, predictions)
+    │   ├── ollama.ts                  # Ollama configuration + callOllamaChat helper
+    │   ├── predictionConfig.ts        # Prediction config: thresholds, tax rates, model name
     │   └── useMediaQuery.ts           # SSR-safe responsive hook (useIsMobile)
     │
     ├── middleware.ts                  # Auth.js route protection; excludes /api/auth/*
@@ -493,19 +651,29 @@ Target allocations are stored in the `portfolio_rules` table and loaded at runti
 - Mobile-friendly responsive layout
 - Authentication via Auth.js v5 (Google OAuth, single-user gate, middleware protection)
 - Custom `/signin` page without header
-- `UserMenuMolecule` logout button on protected pages
+- `UserMenuMolecule` dropdown menu (Dashboard / Rules / Predictions / Sign out) on protected pages
 - Middleware excludes `/api/auth/*` to prevent Auth.js endpoint interception
+- Prediction Agent: 7-day LLM price forecasts (`qwen3:480b`) for 7 UCITS ETFs
+- Yahoo Finance price history integration (cache-first in `price_history` table)
+- After-tax return calculation for Moldova residents (12% capital gains + 15% withholding for dist ETFs)
+- Buy/Sell/Hold signals with configurable thresholds
+- SMA-drift baseline model for accuracy comparison
+- Prediction verification pipeline (direction accuracy + MAPE tracking)
+- Alternative ETF comparison (0.5% improvement threshold)
+- `/predictions` page with desktop table (sortable) and mobile cards
+- `watchlist`, `price_history`, `predictions` database tables
+- API routes: `/api/init-watchlist`, `/api/market-data`, `/api/predictions`, `/api/predictions/verify`
 
 ### 🔄 In Progress
 
-- (none — mobile `/rules` layout complete)
+- (none — prediction agent MVP complete)
 
 ### 📋 TODO (v1.1)
 
 - Web search for news (Tavily)
 - RAG with pgvector
 - Monitoring with Langfuse
-- Yahoo Finance price auto-update
+- Yahoo Finance price auto-update (scheduled job)
 
 > **Note:** Vercel deployment requires adding all environment variables in the Vercel dashboard and updating Google Cloud Console OAuth origins/redirect URIs for the production domain.
 
