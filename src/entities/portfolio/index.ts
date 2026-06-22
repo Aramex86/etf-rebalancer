@@ -2,6 +2,8 @@ export {
   deletePortfolioRule,
   getPortfolioRules,
   getTargetAllocations,
+  getRulePrices,
+  getLatestSnapshotPrices,
   savePortfolioRule,
   savePortfolioSnapshot,
   getLatestPortfolioSnapshot,

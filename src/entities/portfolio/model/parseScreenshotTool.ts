@@ -2,9 +2,7 @@
 // Parse IB portfolio screenshots via Ollama Cloud vision model
 
 import { z } from "zod";
-
-const OLLAMA_API_KEY = process.env.OLLAMA_API_KEY!;
-const OLLAMA_BASE_URL = "https://api.ollama.com";
+import { predictionConfig } from "@/shared/lib/predictionConfig";
 
 export const portfolioSchema = z.object({
   totalValue: z.number().describe("Total portfolio value in USD"),
@@ -26,14 +24,17 @@ export type ParsedPortfolio = z.infer<typeof portfolioSchema>;
 export async function parseScreenshot(
   imageBase64: string,
 ): Promise<ParsedPortfolio> {
-  const response = await fetch(`${OLLAMA_BASE_URL}/api/chat`, {
+  const { baseURL, apiKey, visionModel } = predictionConfig.ollama;
+  const url = `${baseURL}/api/chat`;
+
+  const response = await fetch(url, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${OLLAMA_API_KEY}`,
+      Authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model: "gemma4:31b-cloud",
+      model: visionModel,
       messages: [
         {
           role: "user",

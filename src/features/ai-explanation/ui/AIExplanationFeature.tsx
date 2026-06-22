@@ -23,7 +23,11 @@ export function AIExplanationFeature({
     if (trigger === undefined || trigger === 0) return;
 
     let cancelled = false;
-    setLoading(true);
+
+    // Defer setState to avoid synchronous call in effect body.
+    queueMicrotask(() => {
+      if (!cancelled) setLoading(true);
+    });
 
     fetchExplanation({ amount, portfolio })
       .then((text) => {

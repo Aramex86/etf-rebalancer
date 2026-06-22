@@ -5,6 +5,7 @@ export {
   CURRENT_PRICES,
   ETF_UNIVERSE,
   getEffectiveTargetAllocations,
+  getEffectivePrices,
   getRebalanceStatus,
   MIN_INVESTMENT,
   REBALANCE_THRESHOLDS,

@@ -1,4 +1,5 @@
 import { ETFPortfolio, ETFPrices, ETFRecommendation } from "./etfTypes";
+import { predictionConfig } from "@/shared/lib/predictionConfig";
 
 export const ETF_UNIVERSE = [
   {
@@ -53,6 +54,7 @@ export const CURRENT_PRICES: ETFPrices = Object.fromEntries(
   ETF_UNIVERSE.map((etf) => [etf.symbol, etf.price]),
 );
 
+/** Last-resort fallback portfolio (used only when no client data and no DB snapshot). */
 export const CURRENT_PORTFOLIO: ETFPortfolio = {
   totalValue: 16699.07,
   positions: {
@@ -66,12 +68,16 @@ export const CURRENT_PORTFOLIO: ETFPortfolio = {
   },
 };
 
-export const MIN_INVESTMENT = 50;
+// --- Thresholds (config-backed, with hardcoded fallback for SSR safety) ---
 
+/** Minimum trade amount in USD (from config, fallback $50). */
+export const MIN_INVESTMENT = predictionConfig.rebalance.minInvestment;
+
+/** Rebalance deviation bands (from config). */
 export const REBALANCE_THRESHOLDS = {
-  ignore: 0.03,
-  consider: 0.05,
-  action: 0.05,
+  ignore: predictionConfig.rebalance.ignore,
+  consider: predictionConfig.rebalance.consider,
+  action: predictionConfig.rebalance.action,
 };
 
 export function getRebalanceStatus(
@@ -103,6 +109,27 @@ export async function getEffectiveTargetAllocations(): Promise<
     );
   }
   return TARGET_ALLOCATIONS;
+}
+
+/**
+ * Load prices from the database (latest snapshot or portfolio_rules).
+ * Falls back to hardcoded CURRENT_PRICES if DB is unavailable or empty.
+ */
+export async function getEffectivePrices(): Promise<ETFPrices> {
+  if (typeof window !== "undefined") {
+    return CURRENT_PRICES;
+  }
+
+  try {
+    const { getLatestSnapshotPrices } = await import("@/entities/portfolio");
+    const dbPrices = await getLatestSnapshotPrices();
+    if (Object.keys(dbPrices).length > 0) {
+      return dbPrices;
+    }
+  } catch (error) {
+    console.warn("Failed to load prices from DB, using fallback:", error);
+  }
+  return CURRENT_PRICES;
 }
 
 export function calculateAllocation(

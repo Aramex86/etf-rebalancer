@@ -3,8 +3,11 @@ import { getLatestPortfolioSnapshot } from "@/entities/portfolio";
 import {
   calculateAllocation,
   getEffectiveTargetAllocations,
-  CURRENT_PRICES,
-} from "@/entities/etf/model/etfRules";
+  getEffectivePrices,
+  CURRENT_PORTFOLIO,
+} from "@/entities/etf";
+import { predictionConfig } from "@/shared/lib/predictionConfig";
+import { callOllamaChat } from "@/shared/lib/ollama";
 
 export async function POST(req: Request) {
   try {
@@ -22,34 +25,31 @@ export async function POST(req: Request) {
       }
     }
     if (!portfolio) {
-      portfolio = {
-        totalValue: 16699.07,
-        positions: {
-          SWRD: 9968.29,
-          EIMI: 1154.37,
-          DPYA: 825.17,
-          VDTA: 1517.1,
-          LQDA: 1550.29,
-          IDVY: 206.04,
-          GLDM: 1477.81,
-        },
-      };
+      portfolio = CURRENT_PORTFOLIO;
     }
 
     // Расчёт напрямую (без Mastra Tool)
     const targetAllocations = await getEffectiveTargetAllocations();
+    const prices = await getEffectivePrices();
     const recommendations = calculateAllocation(
       portfolio,
       contribution,
-      CURRENT_PRICES,
+      prices,
       targetAllocations,
     );
 
-    const totalAllocated = recommendations.reduce((sum, r) => sum + r.amount, 0);
+    const totalAllocated = recommendations.reduce(
+      (sum, r) => sum + r.amount,
+      0,
+    );
     const summary = `Распределено $${totalAllocated.toFixed(2)} из $${contribution}`;
 
     // AI объяснение через прямой fetch к Ollama Cloud
-    const explanation = await fetchExplanation(portfolio, contribution, recommendations);
+    const explanation = await fetchExplanation(
+      portfolio,
+      contribution,
+      recommendations,
+    );
 
     return NextResponse.json({
       explanation,
@@ -113,30 +113,17 @@ ${recsText}
 
 Объясни простым языком (2-3 предложения) логику распределения. Используй 1-2 эмодзи. Будь кратким.`;
 
-  const response = await fetch("https://api.ollama.com/api/chat", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${process.env.OLLAMA_API_KEY}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: "qwen3-coder:480b",
-      messages: [
-        {
-          role: "system",
-          content:
-            "Ты финансовый помощник для ETF-портфеля. Отвечай кратко, понятно, с 1-2 эмодзи.",
-        },
-        { role: "user", content: prompt },
-      ],
-      stream: false,
-    }),
-  });
+  const response = await callOllamaChat(
+    predictionConfig.ollama.explanationModel,
+    [
+      {
+        role: "system",
+        content:
+          "Ты финансовый помощник для ETF-портфеля. Отвечай кратко, понятно, с 1-2 эмодзи.",
+      },
+      { role: "user", content: prompt },
+    ],
+  );
 
-  if (!response.ok) {
-    throw new Error(`Ollama API error: ${response.status}`);
-  }
-
-  const data = await response.json();
-  return data.message?.content?.trim() || "Не удалось получить объяснение";
+  return response.trim() || "Не удалось получить объяснение";
 }

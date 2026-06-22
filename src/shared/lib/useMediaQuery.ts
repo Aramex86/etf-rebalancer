@@ -1,14 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useSyncExternalStore } from "react";
 import { breakpoints } from "@/shared/ui/tokens";
-
-/**
- * Parses a breakpoint token value (e.g. "768px") into a numeric pixel value.
- */
-function parseBreakpoint(value: string): number {
-  return Number.parseInt(value, 10);
-}
 
 /**
  * SSR-safe media query hook.
@@ -17,6 +10,8 @@ function parseBreakpoint(value: string): number {
  * after mount to avoid hydration mismatches. Accepts a breakpoint token
  * key (sm/md/lg/xl/2xl) and returns whether the viewport is at least that wide.
  *
+ * Uses `useSyncExternalStore` for correct React 18+ subscription semantics.
+ *
  * @example
  * const isMobile = useMediaQuery("sm"); // viewport >= 640px
  * const isDesktop = useMediaQuery("lg"); // viewport >= 1024px
@@ -24,19 +19,23 @@ function parseBreakpoint(value: string): number {
 export function useMediaQuery(
   breakpoint: keyof typeof breakpoints = "md",
 ): boolean {
-  const [matches, setMatches] = useState(false);
+  const query = `(min-width: ${breakpoints[breakpoint]})`;
 
-  useEffect(() => {
-    const query = `(min-width: ${breakpoints[breakpoint]})`;
-    const mql = globalThis.matchMedia(query);
-    setMatches(mql.matches);
+  const subscribe = useCallback(
+    (callback: () => void) => {
+      const mql = globalThis.matchMedia(query);
+      mql.addEventListener("change", callback);
+      return () => mql.removeEventListener("change", callback);
+    },
+    [query],
+  );
 
-    const handler = (e: MediaQueryListEvent) => setMatches(e.matches);
-    mql.addEventListener("change", handler);
-    return () => mql.removeEventListener("change", handler);
-  }, [breakpoint]);
+  const getSnapshot = useCallback(
+    () => globalThis.matchMedia(query).matches,
+    [query],
+  );
 
-  return matches;
+  return useSyncExternalStore(subscribe, getSnapshot, () => false);
 }
 
 /**
