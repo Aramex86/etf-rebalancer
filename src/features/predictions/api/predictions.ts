@@ -63,15 +63,32 @@ export async function fetchPredictions(
 /**
  * Run the full prediction pipeline for all watchlist ETFs.
  * Returns the newly created predictions.
+ *
+ * Note: parallel LLM calls + Vercel 60s timeout. Client waits up to 55s.
  */
 export async function createPredictions(): Promise<CreatePredictionsResponse> {
-  const response = await fetch("/api/predictions", {
-    method: "POST",
-  });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 55_000);
 
-  if (!response.ok) {
-    throw new Error("Failed to generate predictions");
+  try {
+    const response = await fetch("/api/predictions", {
+      method: "POST",
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      throw new Error("Failed to generate predictions");
+    }
+
+    return response.json();
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "AbortError") {
+      throw new Error(
+        "Генерация заняла больше 55 секунд. Попробуйте ещё раз — данные уже могли сохраниться.",
+      );
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeoutId);
   }
-
-  return response.json();
 }

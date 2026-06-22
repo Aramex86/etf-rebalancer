@@ -2,7 +2,7 @@
 
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { colors, spacing, typography } from "@/shared/ui/tokens";
 import { useIsMobile } from "@/shared/lib/useMediaQuery";
 import {
@@ -28,6 +28,10 @@ export function PredictionsFeature() {
   const [error, setError] = useState<string | null>(null);
   const [verifyResult, setVerifyResult] = useState<VerifyResponse | null>(null);
 
+  // Guard against double-fetch in dev (React 19 StrictMode, fast refresh,
+  // and route re-mounts can all cause useEffect to fire 2-3 times).
+  const didInitialLoadRef = useRef(false);
+
   /** Load latest predictions from GET /api/predictions. */
   const loadPredictions = useCallback(async () => {
     try {
@@ -44,8 +48,10 @@ export function PredictionsFeature() {
   }, []);
 
   useEffect(() => {
-    // Defer to avoid synchronous setState in effect body.
-    queueMicrotask(() => loadPredictions());
+    // Run the initial fetch exactly once, even if the effect re-fires.
+    if (didInitialLoadRef.current) return;
+    didInitialLoadRef.current = true;
+    loadPredictions();
   }, [loadPredictions]);
 
   /** Generate new predictions via POST /api/predictions. */
