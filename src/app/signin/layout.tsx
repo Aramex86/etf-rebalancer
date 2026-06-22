@@ -1,11 +1,9 @@
-import { SessionProvider } from "@/shared/lib/SessionProvider";
-
 export default function SignInLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  return <SessionProvider>{children}</SessionProvider>;
+  return <>{children}</>;
 }
 
 export const metadata = {
