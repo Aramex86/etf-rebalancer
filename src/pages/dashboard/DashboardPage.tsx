@@ -1,9 +1,12 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useMemo } from "react";
 import Link from "next/link";
 import { AIExplanationFeature } from "@/features/ai-explanation";
-import { CalculateAllocationFeature } from "@/features/calculate-allocation";
+import {
+  CalculateAllocationFeature,
+  calculateAllocation,
+} from "@/features/calculate-allocation";
 import { ParsedPortfolio } from "@/features/portfolio-upload";
 import { ButtonAtom } from "@/shared/atoms/ButtonAtom";
 import { PortfolioPositionMolecule } from "@/shared/molecules/PortfolioPositionMolecule";
@@ -15,11 +18,42 @@ function PortfolioPositionsContent({
   loading,
   portfolio,
   targetAllocations,
+  depositAmount,
 }: {
   loading: boolean;
   portfolio: ParsedPortfolio | null;
   targetAllocations: Record<string, number>;
+  depositAmount: number;
 }) {
+  // Compute projected weights after deposit allocation
+  const projectedWeights = useMemo(() => {
+    if (!portfolio || depositAmount <= 0) return null;
+
+    const recommendations = calculateAllocation(
+      portfolio,
+      depositAmount,
+      portfolio.prices ?? {},
+      targetAllocations,
+    );
+
+    const totalAfter = portfolio.totalValue + depositAmount;
+    const weights: Record<string, number> = {};
+
+    // Non-rebalanced ETFs: value stays the same, but weight drops
+    // because the total portfolio grows by depositAmount
+    for (const [symbol, value] of Object.entries(portfolio.positions)) {
+      weights[symbol] = totalAfter > 0 ? value / totalAfter : 0;
+    }
+
+    // Apply recommendations: ETFs receiving new money get updated weights
+    for (const rec of recommendations) {
+      const currentValue = portfolio.positions[rec.symbol] || 0;
+      weights[rec.symbol] = (currentValue + rec.amount) / totalAfter;
+    }
+
+    return weights;
+  }, [portfolio, depositAmount, targetAllocations]);
+
   if (loading) {
     return <p style={{ color: colors.neutral[500] }}>⏳ Загрузка...</p>;
   }
@@ -46,6 +80,7 @@ function PortfolioPositionsContent({
         const target = targetAllocations[symbol] || 0;
         const price = portfolio.prices?.[symbol];
         const shares = portfolio.shares?.[symbol];
+        const newWeight = projectedWeights?.[symbol];
         return (
           <PortfolioPositionMolecule
             key={symbol}
@@ -53,6 +88,7 @@ function PortfolioPositionsContent({
             value={value}
             weight={currentWeight * 100}
             targetWeight={target * 100}
+            newWeight={newWeight !== undefined ? newWeight * 100 : undefined}
             price={price}
             shares={shares}
           />
@@ -220,6 +256,7 @@ export default function DashboardPage() {
               loading={loading || loadingTargets}
               portfolio={portfolio}
               targetAllocations={targetAllocations}
+              depositAmount={amount}
             />
           </CardAtom>
         </div>

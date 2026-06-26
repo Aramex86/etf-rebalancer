@@ -23,8 +23,10 @@ export const PortfolioPositionMolecule = ({
   shares,
 }: PortfolioPositionMoleculeProps) => {
   const deviation = weight - targetWeight;
-  const isOverweight = deviation > 1;
-  const isOnTarget = Math.abs(deviation) <= 1;
+  const projectedDeviation =
+    newWeight !== undefined ? newWeight - targetWeight : deviation;
+  const isOverweight = projectedDeviation > 1;
+  const isOnTarget = Math.abs(projectedDeviation) <= 1;
 
   const displayWeight = newWeight ?? weight;
 
