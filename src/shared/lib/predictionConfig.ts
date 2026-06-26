@@ -155,7 +155,7 @@ export const predictionConfig: AppConfig = {
     userAgent: parseStringEnv("YAHOO_FINANCE_USER_AGENT", "Mozilla/5.0"),
   },
   prediction: {
-    horizonDays: parseIntEnv("PREDICTION_HORIZON_DAYS", 7),
+    horizonDays: parseIntEnv("PREDICTION_HORIZON_DAYS", 1),
     historyDays: parseIntEnv("PREDICTION_HISTORY_DAYS", 30),
     minHistoryPoints: parseIntEnv("PREDICTION_MIN_HISTORY_POINTS", 14),
     flatThresholdPct: parseFloatEnv("PREDICTION_FLAT_THRESHOLD_PCT", 1),
