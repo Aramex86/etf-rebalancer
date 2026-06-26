@@ -5,13 +5,14 @@ import Link from "next/link";
 import { PortfolioRulesFeature } from "@/features/portfolio-rules";
 import {
   PortfolioUploadFeature,
+  PortfolioCsvUploadFeature,
   ParsedPortfolio,
 } from "@/features/portfolio-upload";
 import { PortfolioPositionMolecule } from "@/shared/molecules/PortfolioPositionMolecule";
 import { UserMenuMolecule } from "@/shared/molecules/UserMenuMolecule";
 import { CardAtom } from "@/shared/atoms/CardAtom";
 import { ButtonAtom } from "@/shared/atoms/ButtonAtom";
-import { colors, spacing, typography } from "@/shared/ui/tokens";
+import { colors, radius, spacing, typography } from "@/shared/ui/tokens";
 import { useIsMobile } from "@/shared/lib/useMediaQuery";
 
 function PortfolioPositionsContent({
@@ -72,6 +73,7 @@ export default function RulesPage() {
     Record<string, number>
   >({});
   const [loadingTargets, setLoadingTargets] = useState(true);
+  const [uploadMode, setUploadMode] = useState<"csv" | "screenshot">("csv");
   const isMobile = useIsMobile();
 
   // Загружаем последний снапшот из БД при монтировании
@@ -152,7 +154,78 @@ export default function RulesPage() {
             </Link>
           </div>
 
-          <PortfolioUploadFeature onPortfolioParsed={handlePortfolioParsed} />
+          {/* Upload mode switch */}
+          <div
+            style={{
+              display: "inline-flex",
+              gap: spacing[0],
+              backgroundColor: colors.neutral[100],
+              borderRadius: radius.md,
+              padding: spacing[1],
+              alignSelf: "flex-start",
+            }}
+          >
+            <button
+              onClick={() => setUploadMode("csv")}
+              style={{
+                padding: `${spacing[2]} ${spacing[4]}`,
+                borderRadius: radius.sm,
+                border: "none",
+                cursor: "pointer",
+                fontSize: typography.fontSize.sm,
+                fontWeight: typography.fontWeight.medium,
+                fontFamily: typography.fontFamily.sans.join(", "),
+                backgroundColor:
+                  uploadMode === "csv" ? colors.neutral[0] : "transparent",
+                color:
+                  uploadMode === "csv"
+                    ? colors.neutral[900]
+                    : colors.neutral[500],
+                boxShadow:
+                  uploadMode === "csv"
+                    ? "0 1px 2px 0 rgb(0 0 0 / 0.05)"
+                    : "none",
+                transition: "all 150ms ease",
+              }}
+            >
+              📄 CSV
+            </button>
+            <button
+              onClick={() => setUploadMode("screenshot")}
+              style={{
+                padding: `${spacing[2]} ${spacing[4]}`,
+                borderRadius: radius.sm,
+                border: "none",
+                cursor: "pointer",
+                fontSize: typography.fontSize.sm,
+                fontWeight: typography.fontWeight.medium,
+                fontFamily: typography.fontFamily.sans.join(", "),
+                backgroundColor:
+                  uploadMode === "screenshot"
+                    ? colors.neutral[0]
+                    : "transparent",
+                color:
+                  uploadMode === "screenshot"
+                    ? colors.neutral[900]
+                    : colors.neutral[500],
+                boxShadow:
+                  uploadMode === "screenshot"
+                    ? "0 1px 2px 0 rgb(0 0 0 / 0.05)"
+                    : "none",
+                transition: "all 150ms ease",
+              }}
+            >
+              📸 Скриншот
+            </button>
+          </div>
+
+          {uploadMode === "csv" ? (
+            <PortfolioCsvUploadFeature
+              onPortfolioParsed={handlePortfolioParsed}
+            />
+          ) : (
+            <PortfolioUploadFeature onPortfolioParsed={handlePortfolioParsed} />
+          )}
 
           {/* 📊 Текущий портфель из БД */}
           <CardAtom>
