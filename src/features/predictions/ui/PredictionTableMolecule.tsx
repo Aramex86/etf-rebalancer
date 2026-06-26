@@ -9,6 +9,7 @@ import type { PredictionWithAccuracy } from "../api/predictions";
 import type { Signal } from "@/entities/prediction";
 
 type SortKey = "afterTaxReturnPct" | "accuracy";
+type SortDir = "asc" | "desc";
 
 export interface PredictionTableMoleculeProps {
   predictions: PredictionWithAccuracy[];
@@ -22,6 +23,12 @@ function signalBadgeVariant(
   if (signal === "sell") return "danger";
   if (signal === "hold") return "warning";
   return "neutral";
+}
+
+/** Render sort arrow indicator for the active column. */
+function sortArrow(key: SortKey, activeKey: SortKey, dir: SortDir): string {
+  if (key !== activeKey) return "";
+  return dir === "desc" ? "↓" : "↑";
 }
 
 /** Map signal to Russian label. */
@@ -63,12 +70,28 @@ export function PredictionTableMolecule({
   predictions,
 }: PredictionTableMoleculeProps) {
   const [sortKey, setSortKey] = useState<SortKey>("afterTaxReturnPct");
+  const [sortDir, setSortDir] = useState<SortDir>("desc");
+
+  const handleSort = (key: SortKey) => {
+    if (key === sortKey) {
+      setSortDir((prev) => (prev === "desc" ? "asc" : "desc"));
+    } else {
+      setSortKey(key);
+      setSortDir("desc");
+    }
+  };
 
   const sorted = [...predictions].sort((a, b) => {
+    const dir = sortDir === "desc" ? -1 : 1;
     if (sortKey === "accuracy") {
-      return b.accuracy - a.accuracy;
+      // Treat 0 (no data) as -1 so it always sorts last regardless of direction.
+      const av = a.accuracy > 0 ? a.accuracy : -1;
+      const bv = b.accuracy > 0 ? b.accuracy : -1;
+      return (av - bv) * dir;
     }
-    return (b.afterTaxReturnPct ?? 0) - (a.afterTaxReturnPct ?? 0);
+    const av = a.afterTaxReturnPct ?? -Infinity;
+    const bv = b.afterTaxReturnPct ?? -Infinity;
+    return (av - bv) * dir;
   });
 
   const thStyle: React.CSSProperties = {
@@ -116,17 +139,17 @@ export function PredictionTableMolecule({
             <th style={{ ...thStyle, textAlign: "right" }}>Изм. %</th>
             <th
               style={{ ...thStyle, textAlign: "right" }}
-              onClick={() => setSortKey("afterTaxReturnPct")}
+              onClick={() => handleSort("afterTaxReturnPct")}
             >
-              After-tax % {sortKey === "afterTaxReturnPct" ? "↓" : ""}
+              After-tax % {sortArrow("afterTaxReturnPct", sortKey, sortDir)}
             </th>
             <th style={thStyle}>Сигнал</th>
             <th style={{ ...thStyle, textAlign: "right" }}>Confidence</th>
             <th
               style={{ ...thStyle, textAlign: "right" }}
-              onClick={() => setSortKey("accuracy")}
+              onClick={() => handleSort("accuracy")}
             >
-              Точность {sortKey === "accuracy" ? "↓" : ""}
+              Точность {sortArrow("accuracy", sortKey, sortDir)}
             </th>
             <th style={thStyle}>Обоснование</th>
           </tr>

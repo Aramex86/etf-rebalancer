@@ -146,9 +146,9 @@ export function PredictionsFeature() {
             fontFamily: typography.fontFamily.sans.join(", "),
           }}
         >
-          ✅ Проверено: {verifyResult.verified} из {verifyResult.total}.
-          Точность направления: {(verifyResult.accuracy * 100).toFixed(0)}%.
-          Средний MAPE: {verifyResult.avgMape.toFixed(2)}%.
+          {verifyResult.total === 0
+            ? "ℹ️ Нет прогнозов для проверки — все уже верифицированы."
+            : `✅ Проверено: ${verifyResult.verified} из ${verifyResult.total}. Точность направления: ${(verifyResult.accuracy * 100).toFixed(0)}%. Средний MAPE: ${verifyResult.avgMape.toFixed(2)}%.`}
         </div>
       )}
 

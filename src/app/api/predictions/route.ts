@@ -8,6 +8,7 @@ import {
   fetchPriceHistory,
   savePriceBatch,
   getPriceHistory,
+  getLatestPriceDate,
   type WatchlistItem,
 } from "@/entities/market-data";
 import {
@@ -20,10 +21,10 @@ import {
   predictionSignalTool,
   findBestAlternative,
   type PredictionSaveInput,
+  type PredictionRecord,
 } from "@/entities/prediction";
 import { predictionConfig } from "@/shared/lib/predictionConfig";
 import type { PricePoint } from "@/shared/types/marketData";
-import type { PredictionRecord } from "@/entities/prediction";
 
 // Force Node.js runtime (required for `pg` driver) and extend the
 // Vercel function timeout to 60s — the maximum on Hobby plan.
@@ -82,9 +83,14 @@ async function predictTicker(
 ): Promise<PredictionSaveInput | null> {
   try {
     // a. Fetch history: cache-first (DB), fall back to Yahoo Finance.
+    //    Re-fetch from Yahoo if cache is stale (latest date ≠ today).
     let prices = await getPriceHistory(item.symbol, HISTORY_DAYS);
-    if (prices.length < 14) {
-      // Cache miss or insufficient — try Yahoo Finance.
+    const today = new Date().toISOString().slice(0, 10);
+    const latestCached = await getLatestPriceDate(item.symbol);
+    const cacheStale = latestCached !== today;
+
+    if (prices.length < 14 || cacheStale) {
+      // Cache miss, insufficient, or stale — try Yahoo Finance.
       try {
         const yahooPrices = await fetchPriceHistory(
           item.yahooSymbol,

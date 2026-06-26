@@ -11,8 +11,52 @@ import {
 import {
   getPriceOnDate,
   getWatchlistBySymbol,
-  fetchQuote,
+  fetchPriceHistory,
+  savePriceBatch,
 } from "@/entities/market-data";
+
+/**
+ * Resolve the actual closing price for a prediction's target date.
+ *
+ * 1. Check DB cache (price_history table).
+ * 2. If missing, fetch 30d history from Yahoo, cache it, then re-read.
+ *
+ * We must NOT use fetchQuote() — it returns today's price, not the price
+ * on targetDate. Fetching a 30d window covers the target date (which is
+ * in the past by the time we verify).
+ *
+ * @returns The actual price point, or null if it could not be resolved.
+ */
+async function resolveActualPrice(
+  pred: PredictionRecord,
+): Promise<{ date: string; close: number } | null> {
+  // a. Try DB cache first.
+  const cached = await getPriceOnDate(pred.symbol, pred.targetDate);
+  if (cached) return cached;
+
+  // b. Fallback: fetch 30d history from Yahoo, cache it, then re-read.
+  const watchlistItem = await getWatchlistBySymbol(pred.symbol);
+  if (!watchlistItem) return null;
+
+  try {
+    const yahooPrices = await fetchPriceHistory(
+      watchlistItem.yahooSymbol,
+      "30d",
+      "1d",
+    );
+    if (yahooPrices.length === 0) return null;
+
+    await savePriceBatch(pred.symbol, yahooPrices);
+    // Re-read from DB so the date format matches exactly.
+    return await getPriceOnDate(pred.symbol, pred.targetDate);
+  } catch (yahooErr) {
+    console.warn(
+      `[verify ${pred.symbol}] Yahoo fetch failed:`,
+      yahooErr instanceof Error ? yahooErr.message : String(yahooErr),
+    );
+    return null;
+  }
+}
 
 /** POST /api/predictions/verify — verify unverified predictions against actual prices. */
 export async function POST() {
@@ -22,6 +66,8 @@ export async function POST() {
     if (unverified.length === 0) {
       return NextResponse.json({
         verified: 0,
+        total: 0,
+        directionCorrect: 0,
         accuracy: 0,
         avgMape: 0,
         message: "No unverified predictions found",
@@ -32,23 +78,7 @@ export async function POST() {
 
     for (const pred of unverified) {
       try {
-        // a. Try to get actual price from DB (cache).
-        let actualPricePoint = await getPriceOnDate(
-          pred.symbol,
-          pred.targetDate,
-        );
-
-        // b. Fallback: fetch current quote from Yahoo if DB has no price for target date.
-        if (!actualPricePoint) {
-          const watchlistItem = await getWatchlistBySymbol(pred.symbol);
-          if (watchlistItem) {
-            const quote = await fetchQuote(watchlistItem.yahooSymbol);
-            actualPricePoint = {
-              date: pred.targetDate,
-              close: quote.price,
-            };
-          }
-        }
+        const actualPricePoint = await resolveActualPrice(pred);
 
         if (!actualPricePoint) {
           console.warn(
