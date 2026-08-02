@@ -144,7 +144,7 @@ export const predictionConfig: AppConfig = {
     baseURL: parseStringEnv("OLLAMA_BASE_URL", "https://ollama.com"),
     apiKey: parseStringEnv("OLLAMA_API_KEY", ""),
     predictionModel: parseStringEnv("PREDICTION_MODEL", "minimax-m3:cloud"),
-    explanationModel: parseStringEnv("EXPLANATION_MODEL", "qwen3-coder:480b"),
+    explanationModel: parseStringEnv("EXPLANATION_MODEL", "gemma4:31b-cloud"),
     visionModel: parseStringEnv("VISION_MODEL", "gemma4:31b-cloud"),
   },
   yahoo: {

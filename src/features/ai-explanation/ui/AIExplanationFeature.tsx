@@ -31,6 +31,7 @@ export function AIExplanationFeature({
 
     fetchExplanation({ amount, portfolio })
       .then((text) => {
+        console.log("AI Explanation:", text);
         if (!cancelled) setExplanation(text);
       })
       .catch((error) => {
