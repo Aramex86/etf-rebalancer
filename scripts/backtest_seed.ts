@@ -28,7 +28,7 @@ interface TickerResult {
 }
 
 async function main(): Promise<void> {
-  console.log("=== backtest_seed: loading 1y price history ===\n");
+  console.log("=== backtest_seed: loading 3y price history ===\n");
 
   await runMigrations();
 
@@ -38,7 +38,7 @@ async function main(): Promise<void> {
     process.stdout.write(`Fetching ${item.symbol} (${item.yahooSymbol}) ... `);
 
     try {
-      const prices = await fetchPriceHistory(item.yahooSymbol, "1y", "1d");
+      const prices = await fetchPriceHistory(item.yahooSymbol, "3y", "1d");
 
       if (prices.length === 0) {
         console.log("NO DATA");
@@ -57,7 +57,7 @@ async function main(): Promise<void> {
       await savePriceBatch(item.symbol, prices);
 
       const minDate = prices[0]?.date ?? null;
-      const maxDate = prices[prices.length - 1]?.date ?? null;
+      const maxDate = prices.at(-1)?.date ?? null;
 
       console.log(`${prices.length} rows  [${minDate} → ${maxDate}]`);
       results.push({

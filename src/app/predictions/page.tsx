@@ -2,7 +2,7 @@
 
 "use client";
 
-import { PredictionsFeature } from "@/features/predictions";
+import { BacktestFeature } from "@/features/backtest";
 import { UserMenuMolecule } from "@/shared/molecules/UserMenuMolecule";
 import { colors, spacing } from "@/shared/ui/tokens";
 
@@ -34,7 +34,7 @@ export default function PredictionsPage() {
             margin: "0 auto",
           }}
         >
-          <PredictionsFeature />
+          <BacktestFeature />
         </div>
       </main>
     </>

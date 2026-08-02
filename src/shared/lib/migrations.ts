@@ -101,4 +101,78 @@ export async function runMigrations() {
     ON predictions (target_date)
     WHERE verified_at IS NULL;
   `);
+
+  // ── Backtest Swing Simulator tables ───────────────────────────────────────
+
+  await query(`
+    CREATE TABLE IF NOT EXISTS backtest_runs (
+      id SERIAL PRIMARY KEY,
+      run_id TEXT NOT NULL UNIQUE,
+      model TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'running' CHECK (status IN ('running','paused','done','failed')),
+      params JSONB NOT NULL,
+      start_value DECIMAL(12,2) NOT NULL,
+      end_value DECIMAL(12,2),
+      total_return_pct DECIMAL(8,4),
+      buy_hold_return_pct DECIMAL(8,4),
+      sharpe_ratio DECIMAL(6,4),
+      max_drawdown_pct DECIMAL(8,4),
+      win_rate DECIMAL(4,3),
+      total_trades INTEGER DEFAULT 0,
+      profitable_trades INTEGER DEFAULT 0,
+      total_commission DECIMAL(10,2) DEFAULT 0,
+      total_tax DECIMAL(10,2) DEFAULT 0,
+      current_week INTEGER DEFAULT 0,
+      total_weeks INTEGER DEFAULT 0,
+      error_message TEXT,
+      created_at TIMESTAMP DEFAULT NOW(),
+      completed_at TIMESTAMP
+    );
+  `);
+
+  await query(`
+    CREATE INDEX IF NOT EXISTS idx_backtest_runs_created
+    ON backtest_runs (created_at DESC);
+  `);
+
+  await query(`
+    CREATE TABLE IF NOT EXISTS backtest_trades (
+      id SERIAL PRIMARY KEY,
+      run_id TEXT NOT NULL REFERENCES backtest_runs(run_id),
+      week INTEGER NOT NULL,
+      date DATE NOT NULL,
+      symbol TEXT NOT NULL,
+      action TEXT NOT NULL CHECK (action IN ('buy','sell')),
+      shares INTEGER NOT NULL,
+      price DECIMAL(10,4) NOT NULL,
+      amount_usd DECIMAL(12,2) NOT NULL,
+      commission DECIMAL(10,2) NOT NULL DEFAULT 0,
+      tax DECIMAL(10,2),
+      realized_pnl DECIMAL(12,2),
+      cash_after DECIMAL(12,2) NOT NULL
+    );
+  `);
+
+  await query(`
+    CREATE INDEX IF NOT EXISTS idx_backtest_trades_run_week
+    ON backtest_trades (run_id, week);
+  `);
+
+  await query(`
+    CREATE TABLE IF NOT EXISTS backtest_snapshots (
+      id SERIAL PRIMARY KEY,
+      run_id TEXT NOT NULL REFERENCES backtest_runs(run_id),
+      week INTEGER NOT NULL,
+      date DATE NOT NULL,
+      cash DECIMAL(12,2) NOT NULL,
+      positions JSONB NOT NULL,
+      total_value DECIMAL(12,2) NOT NULL,
+      UNIQUE(run_id, week)
+    );
+  `);
+
+  await query(`
+    CREATE INDEX IF NOT EXISTS idx_backtest_snapshots_run_week
+    ON backtest_snapshots (run_id, week);
+  `);
 }

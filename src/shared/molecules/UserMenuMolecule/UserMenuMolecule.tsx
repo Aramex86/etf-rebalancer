@@ -28,7 +28,7 @@ interface NavEntry {
 const NAV_ENTRIES: NavEntry[] = [
   { label: "Дашборд", href: "/", icon: "📊" },
   { label: "Правила", href: "/rules", icon: "⚙️" },
-  { label: "Прогнозы", href: "/predictions", icon: "📈" },
+  { label: "Симулятор", href: "/predictions", icon: "📈" },
 ];
 
 export function UserMenuMolecule() {

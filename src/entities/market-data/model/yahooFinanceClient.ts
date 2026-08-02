@@ -8,7 +8,7 @@ import { YahooFinanceError } from "./marketDataTypes";
 const YAHOO_CHART_URL = predictionConfig.yahoo.chartURL;
 
 /** Supported range values for the Yahoo chart endpoint. */
-export type YahooRange = "1y" | "30d" | "7d" | "1d";
+export type YahooRange = "3y" | "1y" | "30d" | "7d" | "1d";
 
 /** Quote returned by fetchQuote(). */
 export interface YahooQuote {

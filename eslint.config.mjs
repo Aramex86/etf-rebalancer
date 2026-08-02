@@ -114,6 +114,19 @@ const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
   ...fsaaImportRestrictions,
+  {
+    name: "unused-vars-ignore-underscore",
+    rules: {
+      "@typescript-eslint/no-unused-vars": [
+        "warn",
+        {
+          argsIgnorePattern: "^_",
+          varsIgnorePattern: "^_",
+          caughtErrorsIgnorePattern: "^_",
+        },
+      ],
+    },
+  },
   // Override default ignores of eslint-config-next.
   globalIgnores([
     // Default ignores of eslint-config-next:
