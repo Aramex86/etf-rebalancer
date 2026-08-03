@@ -108,3 +108,131 @@ export async function deleteRun(runId: string): Promise<void> {
     throw new Error(data.error ?? `HTTP ${res.status}`);
   }
 }
+
+// ── Live Paper Trading ──────────────────────────────────────────────────────
+
+/** Live trade executed at real current prices. */
+export interface LiveTradeAction {
+  symbol: string;
+  action: "buy" | "sell";
+  shares: number;
+  price: number;
+  amountUsd: number;
+  commission: number;
+  tax: number | null;
+  realizedPnl: number | null;
+}
+
+/** Market data for a symbol in live mode. */
+export interface LiveMarketData {
+  symbol: string;
+  currentPrice: number;
+  rsi14: number;
+  sma7: number;
+  sma14: number;
+}
+
+/** Aggregated trade statistics for live mode. */
+export interface LiveTradeStats {
+  totalTrades: number;
+  totalBuys: number;
+  totalSells: number;
+  wins: number;
+  losses: number;
+  winRate: number;
+  totalRealizedPnl: number;
+  totalCommissions: number;
+  totalTax: number;
+  bestTradePnl: number;
+  worstTradePnl: number;
+}
+
+/** Response from POST /api/backtest/live. */
+export interface LiveStepResponse {
+  date: string;
+  cash: number;
+  totalValue: number;
+  startingCapital: number;
+  pnlUsd: number;
+  pnlPct: number;
+  actions: LiveTradeAction[];
+  reasoning: string | null;
+  markets: LiveMarketData[];
+  tradeStats: LiveTradeStats;
+}
+
+/** Live portfolio state from GET /api/backtest/live. */
+export interface LivePortfolioState {
+  portfolio: {
+    cash: number;
+    positions: Array<{ symbol: string; shares: number; avgPrice: number }>;
+    startingCapital: number;
+    updatedAt: string | null;
+  };
+  trades: Array<{
+    id: number;
+    date: string;
+    symbol: string;
+    action: "buy" | "sell";
+    shares: number;
+    price: number;
+    amountUsd: number;
+    commission: number;
+    tax: number | null;
+    realizedPnl: number | null;
+    cashAfter: number;
+    reasoning: string | null;
+    createdAt: string;
+  }>;
+  snapshots: Array<{
+    id: number;
+    date: string;
+    cash: number;
+    positions: unknown;
+    totalValue: number;
+  }>;
+}
+
+/**
+ * Execute one live trading step.
+ * POST /api/backtest/live
+ */
+export async function liveStep(model: string): Promise<LiveStepResponse> {
+  const res = await fetch("/api/backtest/live", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ model }),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error ?? `HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
+/**
+ * Get current live portfolio state.
+ * GET /api/backtest/live
+ */
+export async function getLiveState(): Promise<LivePortfolioState> {
+  const res = await fetch("/api/backtest/live");
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error ?? `HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
+/**
+ * Reset live portfolio to a new starting capital.
+ * DELETE /api/backtest/live?capital=1000
+ */
+export async function resetLive(capital: number): Promise<void> {
+  const res = await fetch(`/api/backtest/live?capital=${capital}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error ?? `HTTP ${res.status}`);
+  }
+}

@@ -196,6 +196,12 @@ export interface AgentContext {
       unrealizedPnl: number;
     }>;
     totalValue: number;
+    /** Starting capital for P&L calculation. */
+    startingCapital: number;
+    /** Absolute profit/loss: totalValue − startingCapital. */
+    pnlUsd: number;
+    /** Percentage return: (totalValue − startingCapital) / startingCapital × 100. */
+    pnlPct: number;
   };
   recentTrades: Array<{
     week: number;
@@ -205,6 +211,19 @@ export interface AgentContext {
     price: number;
     realizedPnl: number | null;
   }>;
+  /** Summaries of past completed runs for feedback loop. */
+  pastRuns: PastRunSummary[];
+}
+
+/** Summary of a past completed run — used for feedback loop. */
+export interface PastRunSummary {
+  runId: string;
+  model: string;
+  totalReturnPct: number;
+  vsBuyHoldDeltaPct: number;
+  winRate: number;
+  totalTrades: number;
+  maxDrawdownPct: number;
 }
 
 // ---------------------------------------------------------------------------

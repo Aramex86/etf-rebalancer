@@ -12,7 +12,10 @@ import type { AgentContext, AgentResponse, AgentAction } from "./backtestTypes";
  */
 export function buildSystemPrompt(): string {
   return `You are a swing trading agent managing a UCITS ETF portfolio.
-Your goal: buy low, sell high, generate profit from price swings over 1-2 week horizons.
+Your PRIMARY GOAL: grow the portfolio value above the starting capital. You are judged on total P&L.
+
+Strategy: buy low, sell high, generate profit from price swings over 1-2 week horizons.
+Reinvest profits to compound returns. Avoid large drawdowns.
 
 You receive current market state every week and decide actions for the next week.
 
@@ -26,6 +29,8 @@ Rules:
 - Hold cash when no clear opportunity — do not force trades.
 - You can only sell shares you already own.
 - You can buy with available cash only.
+- If you are in profit (P&L > 0), consider taking some profits on overbought positions.
+- If you are in loss (P&L < 0), be more cautious — prefer high-conviction trades only.
 
 Return ONLY a valid JSON object with this exact structure:
 {
@@ -57,6 +62,15 @@ Rules for actions:
 export function buildUserPrompt(context: AgentContext): string {
   const { week, totalWeeks, date, markets, portfolio, recentTrades } = context;
 
+  // P&L summary
+  const pnlSign = portfolio.pnlUsd >= 0 ? "+" : "";
+  const pnlStatus =
+    portfolio.pnlUsd > 0
+      ? "IN PROFIT"
+      : portfolio.pnlUsd < 0
+        ? "IN LOSS"
+        : "BREAK-EVEN";
+
   // Market data table
   const marketLines = markets
     .map((m) => {
@@ -67,8 +81,8 @@ export function buildUserPrompt(context: AgentContext): string {
   // Portfolio positions
   const positionLines = portfolio.positions
     .map((p) => {
-      const pnlSign = p.unrealizedPnl >= 0 ? "+" : "";
-      return `  ${p.symbol.padEnd(6)}  ${String(p.shares).padStart(4)} shares @ $${p.avgPrice.toFixed(2)}  →  market $${p.marketValue.toFixed(2)}  unrealized P&L: ${pnlSign}$${p.unrealizedPnl.toFixed(2)}`;
+      const posPnlSign = p.unrealizedPnl >= 0 ? "+" : "";
+      return `  ${p.symbol.padEnd(6)}  ${String(p.shares).padStart(4)} shares @ $${p.avgPrice.toFixed(2)}  →  market $${p.marketValue.toFixed(2)}  unrealized P&L: ${posPnlSign}$${p.unrealizedPnl.toFixed(2)}`;
     })
     .join("\n");
 
@@ -84,6 +98,16 @@ export function buildUserPrompt(context: AgentContext): string {
     })
     .join("\n");
 
+  // Past runs feedback (last 5 completed runs)
+  const pastRunLines = context.pastRuns
+    .slice(-5)
+    .map((r) => {
+      const retSign = r.totalReturnPct >= 0 ? "+" : "";
+      const vsSign = r.vsBuyHoldDeltaPct >= 0 ? "+" : "";
+      return `  ${r.model.padEnd(16)}  Return: ${retSign}${r.totalReturnPct.toFixed(2)}%  vs B&H: ${vsSign}${r.vsBuyHoldDeltaPct.toFixed(2)}%  Win: ${(r.winRate * 100).toFixed(0)}%  Trades: ${r.totalTrades}  MaxDD: ${r.maxDrawdownPct.toFixed(1)}%`;
+    })
+    .join("\n");
+
   return `Week ${week} of ${totalWeeks} | Date: ${date}
 
 === Market Data ===
@@ -96,10 +120,22 @@ Positions (${portfolio.positions.length}/3):
 ${positionLines || "  (no positions)"}
 
 Total portfolio value: $${portfolio.totalValue.toFixed(2)}
+Starting capital:      $${portfolio.startingCapital.toFixed(2)}
+P&L: ${pnlSign}$${portfolio.pnlUsd.toFixed(2)} (${pnlSign}${portfolio.pnlPct.toFixed(2)}%) — ${pnlStatus}
 
 === Recent Trades (last 4 weeks) ===
 ${tradeLines || "  (no recent trades)"}
+${
+  pastRunLines
+    ? `
+=== Past Performance (last 5 runs — learn from these) ===
+Model              Return     vs B&H      Win    Trades  MaxDD
+${pastRunLines}
 
+Learn from past runs: avoid strategies that led to large drawdowns or underperformance vs Buy & Hold. Emulate patterns from profitable runs.`
+    : ""
+}
+Your goal is to grow the portfolio above $${portfolio.startingCapital.toFixed(2)}. Current P&L: ${pnlSign}$${portfolio.pnlUsd.toFixed(2)}.
 Decide your actions for this week. Return ONLY a JSON object.`;
 }
 

@@ -175,4 +175,45 @@ export async function runMigrations() {
     CREATE INDEX IF NOT EXISTS idx_backtest_snapshots_run_week
     ON backtest_snapshots (run_id, week);
   `);
+
+  // ── Live Paper Trading table ──────────────────────────────────────────────
+
+  await query(`
+    CREATE TABLE IF NOT EXISTS live_portfolio (
+      id SERIAL PRIMARY KEY,
+      cash DECIMAL(12,2) NOT NULL DEFAULT 1000,
+      positions JSONB NOT NULL DEFAULT '[]',
+      starting_capital DECIMAL(12,2) NOT NULL DEFAULT 1000,
+      updated_at TIMESTAMP DEFAULT NOW()
+    );
+  `);
+
+  await query(`
+    CREATE TABLE IF NOT EXISTS live_trades (
+      id SERIAL PRIMARY KEY,
+      date DATE NOT NULL,
+      symbol TEXT NOT NULL,
+      action TEXT NOT NULL CHECK (action IN ('buy','sell')),
+      shares INTEGER NOT NULL,
+      price DECIMAL(10,4) NOT NULL,
+      amount_usd DECIMAL(12,2) NOT NULL,
+      commission DECIMAL(10,2) NOT NULL DEFAULT 0,
+      tax DECIMAL(10,2),
+      realized_pnl DECIMAL(12,2),
+      cash_after DECIMAL(12,2) NOT NULL,
+      reasoning TEXT,
+      created_at TIMESTAMP DEFAULT NOW()
+    );
+  `);
+
+  await query(`
+    CREATE TABLE IF NOT EXISTS live_snapshots (
+      id SERIAL PRIMARY KEY,
+      date DATE NOT NULL,
+      cash DECIMAL(12,2) NOT NULL,
+      positions JSONB NOT NULL,
+      total_value DECIMAL(12,2) NOT NULL,
+      UNIQUE(date)
+    );
+  `);
 }

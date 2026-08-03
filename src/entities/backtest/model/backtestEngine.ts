@@ -24,6 +24,7 @@ import type {
   StepResult,
   ValidatedAction,
   MarketContext,
+  PastRunSummary,
 } from "./backtestTypes";
 
 // ---------------------------------------------------------------------------
@@ -154,6 +155,7 @@ export function buildAgentContext(
   portfolio: PortfolioState,
   recentTrades: BacktestTradeRecord[],
   _params: SimulationParams,
+  pastRuns: PastRunSummary[] = [],
 ): AgentContext {
   const priceIndex = stepIndices[stepIndex];
   const date = histories.get(activeSymbols[0])![priceIndex].date;
@@ -184,6 +186,11 @@ export function buildAgentContext(
   const totalValue =
     portfolio.cash + positions.reduce((s, p) => s + p.marketValue, 0);
 
+  // P&L relative to starting capital.
+  const startingCapital = _params.startingCapital;
+  const pnlUsd = totalValue - startingCapital;
+  const pnlPct = startingCapital > 0 ? (pnlUsd / startingCapital) * 100 : 0;
+
   // Format recent trades (last 4).
   const recent = recentTrades.slice(-4).map((t) => ({
     week: t.week,
@@ -203,8 +210,12 @@ export function buildAgentContext(
       cash: portfolio.cash,
       positions,
       totalValue,
+      startingCapital,
+      pnlUsd,
+      pnlPct,
     },
     recentTrades: recent,
+    pastRuns,
   };
 }
 
@@ -436,6 +447,8 @@ export interface RunStepParams {
   params: SimulationParams;
   runId: string;
   model: string;
+  /** Summaries of past completed runs for feedback loop. */
+  pastRuns: PastRunSummary[];
 }
 
 /**
@@ -564,6 +577,7 @@ export async function runStep(p: RunStepParams): Promise<StepResult> {
     p.portfolio,
     p.recentTrades,
     p.params,
+    p.pastRuns,
   );
 
   // Call LLM.

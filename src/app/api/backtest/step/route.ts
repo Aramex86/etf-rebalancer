@@ -12,6 +12,7 @@ import {
   insertTrade,
   insertSnapshot,
   updateRunProgress,
+  listCompletedRunSummaries,
   runStep,
   type StepResponse,
   type PortfolioState,
@@ -201,6 +202,8 @@ export async function POST(request: Request) {
     }
 
     // Run the step.
+    const pastRuns = await listCompletedRunSummaries(runId, 10);
+
     const result = await runStep({
       stepIndex,
       stepIndices,
@@ -211,6 +214,7 @@ export async function POST(request: Request) {
       params: run.params,
       runId,
       model: run.model,
+      pastRuns,
     });
 
     // Save trades + snapshot to DB.

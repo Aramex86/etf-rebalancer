@@ -10,6 +10,7 @@ import type {
   RunListItem,
   SimulationParams,
   SnapshotPosition,
+  PastRunSummary,
 } from "./backtestTypes";
 
 // ---------------------------------------------------------------------------
@@ -120,6 +121,40 @@ export async function listRuns(limit = 50): Promise<RunListItem[]> {
         totalReturn !== null && buyHold !== null ? totalReturn - buyHold : null,
       totalTrades: row.total_trades ?? 0,
       createdAt: formatTimestamp(row.created_at) ?? "",
+    };
+  });
+}
+
+/** List completed runs as PastRunSummary for feedback loop. */
+export async function listCompletedRunSummaries(
+  excludeRunId?: string,
+  limit = 10,
+): Promise<PastRunSummary[]> {
+  const result = await query(
+    `SELECT run_id, model, total_return_pct, buy_hold_return_pct,
+            win_rate, total_trades, max_drawdown_pct
+     FROM backtest_runs
+     WHERE status = 'done'
+       ${excludeRunId ? "AND run_id != $2" : ""}
+     ORDER BY created_at DESC
+     LIMIT $1`,
+    excludeRunId ? [limit, excludeRunId] : [limit],
+  );
+
+  return result.rows.map((row) => {
+    const totalReturn =
+      row.total_return_pct !== null ? Number(row.total_return_pct) : 0;
+    const buyHold =
+      row.buy_hold_return_pct !== null ? Number(row.buy_hold_return_pct) : 0;
+    return {
+      runId: row.run_id,
+      model: row.model,
+      totalReturnPct: totalReturn,
+      vsBuyHoldDeltaPct: totalReturn - buyHold,
+      winRate: row.win_rate !== null ? Number(row.win_rate) : 0,
+      totalTrades: row.total_trades ?? 0,
+      maxDrawdownPct:
+        row.max_drawdown_pct !== null ? Number(row.max_drawdown_pct) : 0,
     };
   });
 }

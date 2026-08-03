@@ -19,6 +19,10 @@ import {
   listRuns,
   getRunDetail,
   deleteRun,
+  liveStep,
+  getLiveState,
+  resetLive,
+  type LiveStepResponse,
 } from "../api/backtestApi";
 import { MetricsMolecule } from "./MetricsMolecule";
 import { PortfolioChart } from "./PortfolioChart";
@@ -41,9 +45,40 @@ export function BacktestFeature() {
   const [isLoadingRuns, setIsLoadingRuns] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Launch form state.
-  const [capital, setCapital] = useState("1000");
+  // Launch form state — persisted in localStorage.
+  const [capital, setCapital] = useState(() => {
+    if (typeof window === "undefined") return "1000";
+    return window.localStorage.getItem("backtest_capital") ?? "1000";
+  });
   const [model, setModel] = useState("gemma4:31b-cloud");
+  // Cumulative mode: after a run, set capital = endValue for the next run.
+  const [cumulativeMode, setCumulativeMode] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return window.localStorage.getItem("backtest_cumulative") === "true";
+  });
+  // Original starting capital (for cumulative P&L tracking).
+  const [baseCapital, setBaseCapital] = useState(() => {
+    if (typeof window === "undefined") return 0;
+    return (
+      Number.parseFloat(
+        window.localStorage.getItem("backtest_baseCapital") ?? "0",
+      ) || 0
+    );
+  });
+
+  // Persist to localStorage on change.
+  useEffect(() => {
+    window.localStorage.setItem("backtest_capital", capital);
+  }, [capital]);
+  useEffect(() => {
+    window.localStorage.setItem(
+      "backtest_cumulative",
+      cumulativeMode ? "true" : "false",
+    );
+  }, [cumulativeMode]);
+  useEffect(() => {
+    window.localStorage.setItem("backtest_baseCapital", String(baseCapital));
+  }, [baseCapital]);
 
   // Simulation state.
   const [isRunning, setIsRunning] = useState(false);
@@ -64,6 +99,11 @@ export function BacktestFeature() {
   const [helpOpen, setHelpOpen] = useState<Record<string, boolean>>({});
   const toggleHelp = (key: string) =>
     setHelpOpen((prev) => ({ ...prev, [key]: !prev[key] }));
+
+  // Live paper trading state.
+  const [liveResult, setLiveResult] = useState<LiveStepResponse | null>(null);
+  const [isLiveRunning, setIsLiveRunning] = useState(false);
+  const [liveError, setLiveError] = useState<string | null>(null);
 
   const didInitialLoadRef = useRef(false);
 
@@ -141,6 +181,10 @@ export function BacktestFeature() {
 
     try {
       const capitalNum = Number.parseFloat(capital) || 1000;
+      // In cumulative mode, lock baseCapital on first run.
+      if (cumulativeMode && baseCapital === 0) {
+        setBaseCapital(capitalNum);
+      }
       const startResp = await startRun({ model, capital: capitalNum });
       const { runId, totalWeeks } = startResp;
 
@@ -160,6 +204,11 @@ export function BacktestFeature() {
       setSummary(finishResp.summary);
       setRunStatus("");
 
+      // Cumulative mode: carry over endValue as next run's starting capital.
+      if (cumulativeMode && finishResp.summary.endValue > 0) {
+        setCapital(finishResp.summary.endValue.toFixed(2));
+      }
+
       // Reload run list + load details.
       await loadRuns();
       await loadDetail(runId);
@@ -170,7 +219,40 @@ export function BacktestFeature() {
       setIsRunning(false);
       setProgress(null);
     }
-  }, [capital, model, loadRuns, loadDetail]);
+  }, [capital, model, cumulativeMode, loadRuns, loadDetail]);
+
+  /** Execute one live trading step (real prices from Yahoo). */
+  const handleLiveStep = useCallback(async () => {
+    setIsLiveRunning(true);
+    setLiveError(null);
+    try {
+      const result = await liveStep(model);
+      setLiveResult(result);
+      // Sync "Банк агента" with live portfolio value.
+      setCapital(result.totalValue.toFixed(2));
+      if (baseCapital === 0) {
+        setBaseCapital(result.startingCapital);
+      }
+    } catch (err) {
+      setLiveError(err instanceof Error ? err.message : "Live step failed");
+    } finally {
+      setIsLiveRunning(false);
+    }
+  }, [model, baseCapital]);
+
+  /** Reset live portfolio. */
+  const handleLiveReset = useCallback(async () => {
+    try {
+      const capitalNum = Number.parseFloat(capital) || 1000;
+      await resetLive(capitalNum);
+      setLiveResult(null);
+      setLiveError(null);
+      // Reset "Банк агента" to the starting capital.
+      setBaseCapital(capitalNum);
+    } catch (err) {
+      setLiveError(err instanceof Error ? err.message : "Reset failed");
+    }
+  }, [capital]);
 
   // --- Loading state ---
   if (isLoadingRuns) {
@@ -295,6 +377,12 @@ export function BacktestFeature() {
             <strong>Стартовый капитал</strong> — сумма ($), с которой агент
             начинает торговлю.
             <br />
+            <strong>Накопительный режим</strong> — если включён, после
+            завершения прогона стартовый капитал следующего автоматически
+            становится равным конечному капиталу предыдущего. Так агент
+            продолжает торговать с накопленным результатом — задача приумножить
+            капитал через несколько прогонов.
+            <br />
             <strong>Модель LLM</strong> — какая Ollama-модель принимает решения
             (gemma4:31b-cloud, qwen3:480b и др.).
             <br />
@@ -305,12 +393,123 @@ export function BacktestFeature() {
           </div>
         )}
 
+        {(cumulativeMode || liveResult) &&
+          baseCapital > 0 &&
+          (() => {
+            const currentCapital = Number.parseFloat(capital) || 0;
+            const pnlUsd = currentCapital - baseCapital;
+            const pnlPct = baseCapital > 0 ? (pnlUsd / baseCapital) * 100 : 0;
+            const isProfit = pnlUsd > 0;
+            const isLoss = pnlUsd < 0;
+            return (
+              <div
+                style={{
+                  display: "flex",
+                  gap: spacing[3],
+                  flexWrap: "wrap",
+                  backgroundColor: isProfit
+                    ? colors.success[50]
+                    : isLoss
+                      ? colors.danger[50]
+                      : colors.neutral[50],
+                  border: `1px solid ${
+                    isProfit
+                      ? colors.success[200]
+                      : isLoss
+                        ? colors.danger[200]
+                        : colors.neutral[200]
+                  }`,
+                  borderRadius: "0.5rem",
+                  padding: `${spacing[3]} ${spacing[4]}`,
+                  marginBottom: spacing[4],
+                  fontFamily: typography.fontFamily.sans.join(", "),
+                }}
+              >
+                <div style={{ flex: 1, minWidth: 120 }}>
+                  <div
+                    style={{
+                      fontSize: typography.fontSize.xs,
+                      color: colors.neutral[500],
+                      textTransform: "uppercase",
+                      letterSpacing: typography.letterSpacing.wide,
+                      marginBottom: spacing[1],
+                    }}
+                  >
+                    🏦 Банк агента
+                  </div>
+                  <div
+                    style={{
+                      fontSize: typography.fontSize.xl,
+                      fontWeight: typography.fontWeight.bold,
+                      color: colors.neutral[900],
+                    }}
+                  >
+                    ${currentCapital.toFixed(2)}
+                  </div>
+                </div>
+                <div style={{ flex: 1, minWidth: 120 }}>
+                  <div
+                    style={{
+                      fontSize: typography.fontSize.xs,
+                      color: colors.neutral[500],
+                      textTransform: "uppercase",
+                      letterSpacing: typography.letterSpacing.wide,
+                      marginBottom: spacing[1],
+                    }}
+                  >
+                    Стартовый
+                  </div>
+                  <div
+                    style={{
+                      fontSize: typography.fontSize.xl,
+                      fontWeight: typography.fontWeight.semibold,
+                      color: colors.neutral[600],
+                    }}
+                  >
+                    ${baseCapital.toFixed(2)}
+                  </div>
+                </div>
+                <div style={{ flex: 1, minWidth: 120 }}>
+                  <div
+                    style={{
+                      fontSize: typography.fontSize.xs,
+                      color: colors.neutral[500],
+                      textTransform: "uppercase",
+                      letterSpacing: typography.letterSpacing.wide,
+                      marginBottom: spacing[1],
+                    }}
+                  >
+                    {isProfit ? "📈 Прибыль" : isLoss ? "📉 Убыток" : "➖ P&L"}
+                  </div>
+                  <div
+                    style={{
+                      fontSize: typography.fontSize.xl,
+                      fontWeight: typography.fontWeight.bold,
+                      color: isProfit
+                        ? colors.success[600]
+                        : isLoss
+                          ? colors.danger[600]
+                          : colors.neutral[500],
+                    }}
+                  >
+                    {isProfit ? "+" : ""}${pnlUsd.toFixed(2)}
+                    <span style={{ fontSize: typography.fontSize.sm }}>
+                      {" "}
+                      ({isProfit ? "+" : ""}
+                      {pnlPct.toFixed(2)}%)
+                    </span>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+
         <div
           style={{
             display: "flex",
             flexDirection: isMobile ? "column" : "row",
             gap: spacing[3],
-            alignItems: isMobile ? "stretch" : "flex-end",
+            alignItems: isMobile ? "stretch" : "",
           }}
         >
           <div style={{ flex: 1 }}>
@@ -344,6 +543,35 @@ export function BacktestFeature() {
                 color: colors.neutral[900],
               }}
             />
+            <label
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: spacing[2],
+                marginTop: spacing[2],
+                fontSize: typography.fontSize.xs,
+                color: colors.neutral[600],
+                fontFamily: typography.fontFamily.sans.join(", "),
+                cursor: isRunning ? "not-allowed" : "pointer",
+                opacity: isRunning ? 0.6 : 1,
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={cumulativeMode}
+                onChange={(e) => {
+                  setCumulativeMode(e.target.checked);
+                  if (!e.target.checked) {
+                    setBaseCapital(0);
+                  }
+                }}
+                disabled={isRunning}
+                style={{ cursor: "pointer" }}
+              />
+              Накопительный режим это
+              <br />
+              капитал следующего прогона = результат предыдущего
+            </label>
           </div>
           <div style={{ flex: 1 }}>
             <label
@@ -393,6 +621,8 @@ export function BacktestFeature() {
               borderRadius: "0.375rem",
               cursor: isRunning ? "not-allowed" : "pointer",
               whiteSpace: "nowrap",
+              height: "39px",
+              marginTop: isMobile ? 0 : "20px",
             }}
           >
             {isRunning ? "⏳ Выполняется…" : "🚀 Запустить"}
@@ -583,6 +813,602 @@ export function BacktestFeature() {
           </div>
         </div>
       )}
+
+      {/* Live Paper Trading */}
+      <div style={cardStyle}>
+        <div
+          style={{
+            fontSize: typography.fontSize.lg,
+            fontWeight: typography.fontWeight.bold,
+            color: colors.neutral[900],
+            fontFamily: typography.fontFamily.sans.join(", "),
+            marginBottom: spacing[1],
+          }}
+        >
+          🔴 Live режим — торговля по реальным ценам
+          <button
+            type="button"
+            onClick={() => toggleHelp("live")}
+            aria-label="Как работает live режим"
+            style={helpBtnStyle(helpOpen["live"])}
+          >
+            ?
+          </button>
+        </div>
+        <div
+          style={{
+            fontSize: typography.fontSize.sm,
+            color: colors.neutral[500],
+            fontFamily: typography.fontFamily.sans.join(", "),
+            marginBottom: spacing[4],
+            lineHeight: typography.lineHeight.normal,
+          }}
+        >
+          Агент получает свежие цены ETF из Yahoo Finance и принимает решение
+          прямо сейчас. Сделки виртуальные, но цены реальные. Баланс обновляется
+          и сохраняется.
+        </div>
+        {helpOpen["live"] && (
+          <div style={helpPanelStyle}>
+            <strong>Live режим</strong> — это paper trading (бумажная торговля).
+            Агент видит реальные текущие цены ETF с биржи, анализирует их и
+            решает купить/продать. Сделки исполняются по реальным ценам, но
+            деньги виртуальные. Баланс сохраняется в БД и не сбрасывается при
+            перезагрузке. Нажмите «Сделать шаг» — агент один раз проанализирует
+            рынок и совершит сделки.
+          </div>
+        )}
+
+        {/* Live action buttons */}
+        <div
+          style={{
+            display: "flex",
+            gap: spacing[3],
+            flexWrap: "wrap",
+            marginBottom: spacing[4],
+          }}
+        >
+          <button
+            onClick={handleLiveStep}
+            disabled={isLiveRunning}
+            style={{
+              padding: `${spacing[2]} ${spacing[4]}`,
+              fontSize: typography.fontSize.base,
+              fontWeight: typography.fontWeight.semibold,
+              color: colors.neutral[0],
+              backgroundColor: isLiveRunning
+                ? colors.brand[400]
+                : colors.brand[600],
+              border: "none",
+              borderRadius: "0.375rem",
+              cursor: isLiveRunning ? "not-allowed" : "pointer",
+              opacity: isLiveRunning ? 0.7 : 1,
+            }}
+          >
+            {isLiveRunning ? "⏳ Анализ рынка…" : "📊 Сделать шаг"}
+          </button>
+          <button
+            onClick={handleLiveReset}
+            disabled={isLiveRunning}
+            style={{
+              padding: `${spacing[2]} ${spacing[4]}`,
+              fontSize: typography.fontSize.base,
+              fontWeight: typography.fontWeight.semibold,
+              color: colors.danger[600],
+              backgroundColor: "transparent",
+              border: `1px solid ${colors.danger[300]}`,
+              borderRadius: "0.375rem",
+              cursor: isLiveRunning ? "not-allowed" : "pointer",
+              opacity: isLiveRunning ? 0.5 : 1,
+            }}
+          >
+            🔄 Сбросить
+          </button>
+        </div>
+
+        {/* Live error */}
+        {liveError && (
+          <div
+            style={{
+              backgroundColor: colors.danger[50],
+              border: `1px solid ${colors.danger[200]}`,
+              borderRadius: "0.5rem",
+              padding: `${spacing[2]} ${spacing[3]}`,
+              fontSize: typography.fontSize.sm,
+              color: colors.danger[700],
+              marginBottom: spacing[3],
+            }}
+          >
+            ❌ {liveError}
+          </div>
+        )}
+
+        {/* Live result */}
+        {liveResult && (
+          <div
+            style={{
+              backgroundColor: colors.neutral[50],
+              border: `1px solid ${colors.neutral[200]}`,
+              borderRadius: "0.5rem",
+              padding: spacing[4],
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                gap: spacing[4],
+                flexWrap: "wrap",
+                marginBottom: spacing[3],
+              }}
+            >
+              <div>
+                <div
+                  style={{
+                    fontSize: typography.fontSize.xs,
+                    color: colors.neutral[500],
+                    textTransform: "uppercase",
+                    letterSpacing: typography.letterSpacing.wide,
+                  }}
+                >
+                  Дата
+                </div>
+                <div
+                  style={{
+                    fontSize: typography.fontSize.base,
+                    fontWeight: typography.fontWeight.semibold,
+                    color: colors.neutral[900],
+                  }}
+                >
+                  {liveResult.date}
+                </div>
+              </div>
+              <div>
+                <div
+                  style={{
+                    fontSize: typography.fontSize.xs,
+                    color: colors.neutral[500],
+                    textTransform: "uppercase",
+                    letterSpacing: typography.letterSpacing.wide,
+                  }}
+                >
+                  💰 Баланс
+                </div>
+                <div
+                  style={{
+                    fontSize: typography.fontSize.base,
+                    fontWeight: typography.fontWeight.bold,
+                    color: colors.neutral[900],
+                  }}
+                >
+                  ${liveResult.totalValue.toFixed(2)}
+                </div>
+              </div>
+              <div>
+                <div
+                  style={{
+                    fontSize: typography.fontSize.xs,
+                    color: colors.neutral[500],
+                    textTransform: "uppercase",
+                    letterSpacing: typography.letterSpacing.wide,
+                  }}
+                >
+                  P&L
+                </div>
+                <div
+                  style={{
+                    fontSize: typography.fontSize.base,
+                    fontWeight: typography.fontWeight.bold,
+                    color:
+                      liveResult.pnlUsd > 0
+                        ? colors.success[600]
+                        : liveResult.pnlUsd < 0
+                          ? colors.danger[600]
+                          : colors.neutral[500],
+                  }}
+                >
+                  {liveResult.pnlUsd >= 0 ? "+" : ""}$
+                  {liveResult.pnlUsd.toFixed(2)} (
+                  {liveResult.pnlPct >= 0 ? "+" : ""}
+                  {liveResult.pnlPct.toFixed(2)}%)
+                </div>
+              </div>
+              <div>
+                <div
+                  style={{
+                    fontSize: typography.fontSize.xs,
+                    color: colors.neutral[500],
+                    textTransform: "uppercase",
+                    letterSpacing: typography.letterSpacing.wide,
+                  }}
+                >
+                  Кэш
+                </div>
+                <div
+                  style={{
+                    fontSize: typography.fontSize.base,
+                    fontWeight: typography.fontWeight.semibold,
+                    color: colors.neutral[700],
+                  }}
+                >
+                  ${liveResult.cash.toFixed(2)}
+                </div>
+              </div>
+            </div>
+
+            {/* Trades */}
+            {liveResult.actions.length > 0 && (
+              <div style={{ marginBottom: spacing[3] }}>
+                <div
+                  style={{
+                    fontSize: typography.fontSize.sm,
+                    fontWeight: typography.fontWeight.semibold,
+                    color: colors.neutral[700],
+                    marginBottom: spacing[2],
+                  }}
+                >
+                  Сделки:
+                </div>
+                {liveResult.actions.map((t, i) => (
+                  <div
+                    key={i}
+                    style={{
+                      display: "flex",
+                      gap: spacing[3],
+                      padding: `${spacing[1]} 0`,
+                      fontSize: typography.fontSize.sm,
+                      color: colors.neutral[600],
+                    }}
+                  >
+                    <span
+                      style={{
+                        fontWeight: typography.fontWeight.semibold,
+                        color:
+                          t.action === "buy"
+                            ? colors.success[600]
+                            : colors.danger[600],
+                      }}
+                    >
+                      {t.action === "buy" ? "BUY" : "SELL"}
+                    </span>
+                    <span>{t.symbol}</span>
+                    <span>
+                      {t.shares} shares @ ${t.price.toFixed(2)}
+                    </span>
+                    <span>${t.amountUsd.toFixed(2)}</span>
+                    {t.realizedPnl !== null && (
+                      <span
+                        style={{
+                          color:
+                            t.realizedPnl >= 0
+                              ? colors.success[600]
+                              : colors.danger[600],
+                        }}
+                      >
+                        P&L: {t.realizedPnl >= 0 ? "+" : ""}$
+                        {t.realizedPnl.toFixed(2)}
+                      </span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Reasoning */}
+            {liveResult.reasoning && (
+              <div
+                style={{
+                  backgroundColor: colors.brand[50],
+                  border: `1px solid ${colors.brand[100]}`,
+                  borderRadius: "0.375rem",
+                  padding: `${spacing[2]} ${spacing[3]}`,
+                  fontSize: typography.fontSize.sm,
+                  color: colors.neutral[700],
+                  lineHeight: typography.lineHeight.normal,
+                }}
+              >
+                🤖 {liveResult.reasoning}
+              </div>
+            )}
+
+            {/* Market data */}
+            {liveResult.markets.length > 0 && (
+              <div style={{ marginTop: spacing[3] }}>
+                <div
+                  style={{
+                    fontSize: typography.fontSize.xs,
+                    color: colors.neutral[500],
+                    textTransform: "uppercase",
+                    letterSpacing: typography.letterSpacing.wide,
+                    marginBottom: spacing[1],
+                  }}
+                >
+                  Текущие цены ETF:
+                </div>
+                <div
+                  style={{
+                    display: "flex",
+                    flexWrap: "wrap",
+                    gap: spacing[2],
+                  }}
+                >
+                  {liveResult.markets.map((m) => (
+                    <span
+                      key={m.symbol}
+                      style={{
+                        fontSize: typography.fontSize.xs,
+                        color: colors.neutral[600],
+                        backgroundColor: colors.neutral[100],
+                        padding: `${spacing[1]} ${spacing[2]}`,
+                        borderRadius: "0.25rem",
+                      }}
+                    >
+                      {m.symbol}: ${m.currentPrice.toFixed(2)}{" "}
+                      <span style={{ color: colors.neutral[400] }}>
+                        RSI {m.rsi14.toFixed(0)}
+                      </span>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Trade statistics */}
+            {liveResult.tradeStats && (
+              <div
+                style={{
+                  marginTop: spacing[3],
+                  paddingTop: spacing[3],
+                  borderTop: `1px solid ${colors.neutral[200]}`,
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: typography.fontSize.xs,
+                    color: colors.neutral[500],
+                    textTransform: "uppercase",
+                    letterSpacing: typography.letterSpacing.wide,
+                    marginBottom: spacing[2],
+                  }}
+                >
+                  📊 Статистика сделок
+                </div>
+                <div
+                  style={{
+                    display: "flex",
+                    flexWrap: "wrap",
+                    gap: spacing[3],
+                  }}
+                >
+                  <div
+                    style={{
+                      backgroundColor: colors.neutral[100],
+                      borderRadius: "0.375rem",
+                      padding: `${spacing[2]} ${spacing[3]}`,
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: typography.fontSize.xs,
+                        color: colors.neutral[500],
+                      }}
+                    >
+                      Всего сделок
+                    </div>
+                    <div
+                      style={{
+                        fontSize: typography.fontSize.base,
+                        fontWeight: typography.fontWeight.bold,
+                        color: colors.neutral[900],
+                      }}
+                    >
+                      {liveResult.tradeStats.totalTrades}
+                      <span
+                        style={{
+                          fontSize: typography.fontSize.xs,
+                          color: colors.neutral[400],
+                          fontWeight: typography.fontWeight.regular,
+                        }}
+                      >
+                        {" "}
+                        (BUY {liveResult.tradeStats.totalBuys} / SELL{" "}
+                        {liveResult.tradeStats.totalSells})
+                      </span>
+                    </div>
+                  </div>
+                  <div
+                    style={{
+                      backgroundColor: colors.success[50],
+                      borderRadius: "0.375rem",
+                      padding: `${spacing[2]} ${spacing[3]}`,
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: typography.fontSize.xs,
+                        color: colors.success[600],
+                      }}
+                    >
+                      🏆 Выигрышей
+                    </div>
+                    <div
+                      style={{
+                        fontSize: typography.fontSize.base,
+                        fontWeight: typography.fontWeight.bold,
+                        color: colors.success[600],
+                      }}
+                    >
+                      {liveResult.tradeStats.wins}
+                    </div>
+                  </div>
+                  <div
+                    style={{
+                      backgroundColor: colors.danger[50],
+                      borderRadius: "0.375rem",
+                      padding: `${spacing[2]} ${spacing[3]}`,
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: typography.fontSize.xs,
+                        color: colors.danger[600],
+                      }}
+                    >
+                      📉 Проигрышей
+                    </div>
+                    <div
+                      style={{
+                        fontSize: typography.fontSize.base,
+                        fontWeight: typography.fontWeight.bold,
+                        color: colors.danger[600],
+                      }}
+                    >
+                      {liveResult.tradeStats.losses}
+                    </div>
+                  </div>
+                  <div
+                    style={{
+                      backgroundColor: colors.neutral[100],
+                      borderRadius: "0.375rem",
+                      padding: `${spacing[2]} ${spacing[3]}`,
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: typography.fontSize.xs,
+                        color: colors.neutral[500],
+                      }}
+                    >
+                      Win Rate
+                    </div>
+                    <div
+                      style={{
+                        fontSize: typography.fontSize.base,
+                        fontWeight: typography.fontWeight.bold,
+                        color: colors.neutral[900],
+                      }}
+                    >
+                      {liveResult.tradeStats.winRate.toFixed(1)}%
+                    </div>
+                  </div>
+                  <div
+                    style={{
+                      backgroundColor:
+                        liveResult.tradeStats.totalRealizedPnl >= 0
+                          ? colors.success[50]
+                          : colors.danger[50],
+                      borderRadius: "0.375rem",
+                      padding: `${spacing[2]} ${spacing[3]}`,
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: typography.fontSize.xs,
+                        color: colors.neutral[500],
+                      }}
+                    >
+                      💰 Реализованный P&L
+                    </div>
+                    <div
+                      style={{
+                        fontSize: typography.fontSize.base,
+                        fontWeight: typography.fontWeight.bold,
+                        color:
+                          liveResult.tradeStats.totalRealizedPnl > 0
+                            ? colors.success[600]
+                            : liveResult.tradeStats.totalRealizedPnl < 0
+                              ? colors.danger[600]
+                              : colors.neutral[500],
+                      }}
+                    >
+                      {liveResult.tradeStats.totalRealizedPnl >= 0 ? "+" : ""}${" "}
+                      {liveResult.tradeStats.totalRealizedPnl.toFixed(2)}
+                    </div>
+                  </div>
+                  <div
+                    style={{
+                      backgroundColor: colors.neutral[100],
+                      borderRadius: "0.375rem",
+                      padding: `${spacing[2]} ${spacing[3]}`,
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: typography.fontSize.xs,
+                        color: colors.neutral[500],
+                      }}
+                    >
+                      💸 Комиссии + налог
+                    </div>
+                    <div
+                      style={{
+                        fontSize: typography.fontSize.base,
+                        fontWeight: typography.fontWeight.semibold,
+                        color: colors.neutral[600],
+                      }}
+                    >
+                      ${" "}
+                      {(
+                        liveResult.tradeStats.totalCommissions +
+                        liveResult.tradeStats.totalTax
+                      ).toFixed(2)}
+                    </div>
+                  </div>
+                  <div
+                    style={{
+                      backgroundColor: colors.success[50],
+                      borderRadius: "0.375rem",
+                      padding: `${spacing[2]} ${spacing[3]}`,
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: typography.fontSize.xs,
+                        color: colors.success[600],
+                      }}
+                    >
+                      📈 Лучшая сделка
+                    </div>
+                    <div
+                      style={{
+                        fontSize: typography.fontSize.base,
+                        fontWeight: typography.fontWeight.bold,
+                        color: colors.success[600],
+                      }}
+                    >
+                      +${liveResult.tradeStats.bestTradePnl.toFixed(2)}
+                    </div>
+                  </div>
+                  <div
+                    style={{
+                      backgroundColor: colors.danger[50],
+                      borderRadius: "0.375rem",
+                      padding: `${spacing[2]} ${spacing[3]}`,
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: typography.fontSize.xs,
+                        color: colors.danger[600],
+                      }}
+                    >
+                      📉 Худшая сделка
+                    </div>
+                    <div
+                      style={{
+                        fontSize: typography.fontSize.base,
+                        fontWeight: typography.fontWeight.bold,
+                        color: colors.danger[600],
+                      }}
+                    >
+                      ${liveResult.tradeStats.worstTradePnl.toFixed(2)}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
 
       {/* Run list */}
       {runs.length > 0 && (

@@ -142,6 +142,7 @@ async function runSimulationLoop(
       params,
       runId,
       model,
+      pastRuns: [],
     });
 
     await saveStepTrades(result.validatedActions);

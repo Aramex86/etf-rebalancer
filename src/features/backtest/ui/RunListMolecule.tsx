@@ -29,6 +29,33 @@ const statusColor: Record<string, string> = {
   failed: colors.danger[600],
 };
 
+/** WIN / LOSS / DRAW badge based on total return. */
+function resultBadge(ret: number | null): {
+  label: string;
+  bg: string;
+  fg: string;
+} {
+  if (ret === null)
+    return { label: "—", bg: colors.neutral[100], fg: colors.neutral[400] };
+  if (ret > 0.01)
+    return {
+      label: "🏆 Выигрыш",
+      bg: colors.success[50],
+      fg: colors.success[700],
+    };
+  if (ret < -0.01)
+    return {
+      label: "📉 Проигрыш",
+      bg: colors.danger[50],
+      fg: colors.danger[700],
+    };
+  return {
+    label: "➖ Ничья",
+    bg: colors.neutral[100],
+    fg: colors.neutral[500],
+  };
+}
+
 /**
  * List of past backtest runs. Click to view details.
  */
@@ -122,6 +149,26 @@ export function RunListMolecule({
                   <span>vs B&H: {fmtPct(run.vsBuyHoldDeltaPct)}</span>
                   <span>Trades: {run.totalTrades}</span>
                 </div>
+                <div style={{ marginTop: spacing[2] }}>
+                  {(() => {
+                    const b = resultBadge(run.totalReturnPct);
+                    return (
+                      <span
+                        style={{
+                          display: "inline-block",
+                          padding: `${spacing[1]} ${spacing[2]}`,
+                          borderRadius: "0.25rem",
+                          backgroundColor: b.bg,
+                          color: b.fg,
+                          fontSize: typography.fontSize.xs,
+                          fontWeight: typography.fontWeight.semibold,
+                        }}
+                      >
+                        {b.label}
+                      </span>
+                    );
+                  })()}
+                </div>
               </div>
               <div style={{ marginTop: spacing[2], textAlign: "right" }}>
                 <button
@@ -141,7 +188,7 @@ export function RunListMolecule({
                     opacity: deletingRunId === run.runId ? 0.5 : 1,
                   }}
                 >
-                  {deletingRunId === run.runId ? "⏳ Удаление…" : "🗑 Удалить"}
+                  {deletingRunId === run.runId ? "⏳ Удаление…" : "Delete"}
                 </button>
               </div>
             </div>
@@ -181,6 +228,7 @@ export function RunListMolecule({
               "Статус",
               "Модель",
               "Дата",
+              "Результат",
               "Доходность",
               "vs B&H",
               "Trades",
@@ -242,6 +290,31 @@ export function RunListMolecule({
                   }}
                 >
                   {run.createdAt.slice(0, 16)}
+                </td>
+                <td
+                  style={{
+                    padding: `${spacing[2]} ${spacing[3]}`,
+                  }}
+                >
+                  {(() => {
+                    const b = resultBadge(ret);
+                    return (
+                      <span
+                        style={{
+                          display: "inline-block",
+                          padding: `${spacing[1]} ${spacing[2]}`,
+                          borderRadius: "0.25rem",
+                          backgroundColor: b.bg,
+                          color: b.fg,
+                          fontSize: typography.fontSize.xs,
+                          fontWeight: typography.fontWeight.semibold,
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {b.label}
+                      </span>
+                    );
+                  })()}
                 </td>
                 <td
                   style={{
