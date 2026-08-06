@@ -264,7 +264,7 @@ async function fetchExplanation(
         `- ${d.symbol}:`,
         `  • Текущая цена: $${md.currentPrice.toFixed(2)}`,
         `  • Изменение за 30д: ${changeDir}`,
-        `  • SMA7: $${md.sma7.toFixed(2)} | SMA14: $${md.sma14.toFixed(2)} → ${trend}`,
+        `  • SMA7: $${md.sma7.toFixed(2)} | SMA14: $${md.sma14.toFixed(2)} — ${trend}`,
         `  • Цена ${pricePosition}`,
         `  • Волатильность (годовая): ${(md.volatility * 100).toFixed(1)}%`,
         `  • Диапазон 30д: $${md.low30.toFixed(2)} – $${md.high30.toFixed(2)}`,
