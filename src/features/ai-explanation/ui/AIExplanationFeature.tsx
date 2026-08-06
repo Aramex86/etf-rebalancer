@@ -51,7 +51,8 @@ export function AIExplanationFeature({
     <div style={{ width: "100%", minWidth: "0" }}>
       <AIExplanationMolecule
         explanation={
-          explanation || "Нажмите «Рассчитать», чтобы получить AI-объяснение"
+          explanation ||
+          "Нажмите «Рассчитать», чтобы получить AI-анализ портфеля"
         }
         loading={loading}
       />

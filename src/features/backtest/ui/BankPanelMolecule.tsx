@@ -2,7 +2,7 @@
 
 "use client";
 
-import { colors, spacing } from "@/shared/ui/tokens";
+import { colors, spacing, typography as typo } from "@/shared/ui/tokens";
 
 interface BankPanelMoleculeProps {
   currentCapital: number;

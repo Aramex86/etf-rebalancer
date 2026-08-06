@@ -49,6 +49,7 @@ export async function POST(req: Request) {
       portfolio,
       contribution,
       recommendations,
+      targetAllocations,
     );
 
     return NextResponse.json({
@@ -89,6 +90,7 @@ async function fetchExplanation(
     currentWeight: number;
     target: number;
   }>,
+  targetAllocations: Record<string, number>,
 ): Promise<string> {
   const positionsText = Object.entries(portfolio.positions)
     .map(([s, v]) => `- ${s}: $${Number(v).toLocaleString()}`)
@@ -101,17 +103,67 @@ async function fetchExplanation(
     )
     .join("\n");
 
-  const prompt = `Ты персональный финансовый помощник для ETF-портфеля.
+  // Compute deviations for all ETFs (including those not receiving new money)
+  const allDeviations = Object.entries(portfolio.positions)
+    .map(([symbol, value]) => {
+      const currentWeight =
+        portfolio.totalValue > 0 ? value / portfolio.totalValue : 0;
+      const target = targetAllocations[symbol] ?? 0;
+      const deviation = currentWeight - target;
+      const direction =
+        deviation > 0.005
+          ? "перевес"
+          : deviation < -0.005
+            ? "недовес"
+            : "в цели";
+      return {
+        symbol,
+        value: Number(value),
+        currentWeightPct: (currentWeight * 100).toFixed(1),
+        targetPct: (target * 100).toFixed(0),
+        deviationPct: (deviation * 100).toFixed(1),
+        direction,
+      };
+    })
+    .sort(
+      (a, b) =>
+        Math.abs(Number(b.deviationPct)) - Math.abs(Number(a.deviationPct)),
+    );
 
-Текущий портфель ($${portfolio.totalValue.toLocaleString()}):
+  const deviationsText = allDeviations
+    .map(
+      (d) =>
+        `- ${d.symbol}: текущая доля ${d.currentWeightPct}%, цель ${d.targetPct}%, отклонение ${d.deviationPct}% (${d.direction})`,
+    )
+    .join("\n");
+
+  const prompt = `Ты персональный финансовый аналитик для ETF-портфеля на Interactive Brokers.
+
+## Текущий портфель ($${portfolio.totalValue.toLocaleString()})
+
 ${positionsText}
 
-Новая сумма для инвестирования: $${contribution}
+## Целевые доли и отклонения
 
-Расчётное распределение:
+${deviationsText}
+
+## Новая сумма для инвестирования: $${contribution}
+
+## Расчётное распределение (алгоритм)
+
 ${recsText}
 
-Объясни простым языком (2-3 предложения) логику распределения. Используй 1-2 эмодзи. Будь кратким.`;
+## Задача
+
+Проведи подробный анализ портфеля. Раздели ответ на два раздела:
+
+### 📊 Анализ отклонений
+Разбери каждый ETF с значимым отклонением (>1% от цели). Объясни возможные причины отклонения — рост/падение цены, новые пополнения, отсутствие покупок. Укажи какие ETF перевешивают (нужно осторожно добавлять или не добавлять) и какие недовешивают (приоритет для новых денег). Используй конкретные цифры из данных выше.
+
+### 💡 Рекомендации по стратегии
+Объясни логику распределения $${contribution}. Почему деньги идут именно в эти ETF. Стоит ли покупать на просадках или ждать. Нужно ли продавать перевес (учти налоговую эффективность — продажи облагаются налогом 12%). Конкретные шаги: что купить, в каком порядке, на что обратить внимание. Учти минимальную сделку $50.
+
+Пиши развёрнуто (10-15 предложений всего), конкретно, с цифрами. Используй эмодзи для наглядности. Без воды.`;
 
   const response = await callOllamaChat(
     predictionConfig.ollama.explanationModel,
@@ -119,11 +171,11 @@ ${recsText}
       {
         role: "system",
         content:
-          "Ты финансовый помощник для ETF-портфеля. Отвечай кратко, понятно, с 1-2 эмодзи.",
+          "Ты профессиональный финансовый аналитик для ETF-портфеля. Отвечай подробно, структурированно, с цифрами и эмодзи. Разделяй ответ на разделы с заголовками.",
       },
       { role: "user", content: prompt },
     ],
   );
 
-  return response.trim() || "Не удалось получить объяснение";
+  return response.trim() || "Не удалось получить анализ";
 }
