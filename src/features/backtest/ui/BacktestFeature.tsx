@@ -104,6 +104,35 @@ export function BacktestFeature() {
   const [liveResult, setLiveResult] = useState<LiveStepResponse | null>(null);
   const [isLiveRunning, setIsLiveRunning] = useState(false);
   const [liveError, setLiveError] = useState<string | null>(null);
+  const [liveHistory, setLiveHistory] = useState<
+    Array<{
+      id: number;
+      date: string;
+      symbol: string;
+      action: "buy" | "sell";
+      shares: number;
+      price: number;
+      amountUsd: number;
+      commission: number;
+      tax: number | null;
+      realizedPnl: number | null;
+      reasoning: string | null;
+    }>
+  >([]);
+
+  /** Load live trading history on mount. */
+  const loadLiveHistory = useCallback(async () => {
+    try {
+      const state = await getLiveState();
+      setLiveHistory(state.trades);
+    } catch {
+      // Ignore — no live state yet.
+    }
+  }, []);
+
+  useEffect(() => {
+    loadLiveHistory();
+  }, [loadLiveHistory]);
 
   const didInitialLoadRef = useRef(false);
 
@@ -233,12 +262,14 @@ export function BacktestFeature() {
       if (baseCapital === 0) {
         setBaseCapital(result.startingCapital);
       }
+      // Reload full trade history.
+      await loadLiveHistory();
     } catch (err) {
       setLiveError(err instanceof Error ? err.message : "Live step failed");
     } finally {
       setIsLiveRunning(false);
     }
-  }, [model, baseCapital]);
+  }, [model, baseCapital, loadLiveHistory]);
 
   /** Reset live portfolio. */
   const handleLiveReset = useCallback(async () => {
@@ -247,6 +278,7 @@ export function BacktestFeature() {
       await resetLive(capitalNum);
       setLiveResult(null);
       setLiveError(null);
+      setLiveHistory([]);
       // Reset "Банк агента" to the starting capital.
       setBaseCapital(capitalNum);
     } catch (err) {
@@ -1406,6 +1438,119 @@ export function BacktestFeature() {
                 </div>
               </div>
             )}
+          </div>
+        )}
+
+        {/* Full trade history */}
+        {liveHistory.length > 0 && (
+          <div
+            style={{
+              marginTop: spacing[3],
+              borderTop: `1px solid ${colors.neutral[200]}`,
+              paddingTop: spacing[3],
+            }}
+          >
+            <div
+              style={{
+                fontSize: typography.fontSize.xs,
+                color: colors.neutral[500],
+                textTransform: "uppercase",
+                letterSpacing: typography.letterSpacing.wide,
+                marginBottom: spacing[2],
+              }}
+            >
+              📋 История сделок ({liveHistory.length})
+            </div>
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: spacing[1],
+                maxHeight: "300px",
+                overflowY: "auto",
+              }}
+            >
+              {liveHistory.map((t) => (
+                <div
+                  key={t.id}
+                  style={{
+                    display: "flex",
+                    gap: spacing[2],
+                    alignItems: "center",
+                    padding: `${spacing[1]} ${spacing[2]}`,
+                    fontSize: typography.fontSize.sm,
+                    backgroundColor: colors.neutral[50],
+                    borderRadius: "0.25rem",
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <span
+                    style={{
+                      color: colors.neutral[400],
+                      fontSize: typography.fontSize.xs,
+                      minWidth: "70px",
+                    }}
+                  >
+                    {t.date}
+                  </span>
+                  <span
+                    style={{
+                      fontWeight: typography.fontWeight.bold,
+                      color:
+                        t.action === "buy"
+                          ? colors.success[600]
+                          : colors.danger[600],
+                      minWidth: "44px",
+                    }}
+                  >
+                    {t.action === "buy" ? "BUY" : "SELL"}
+                  </span>
+                  <span
+                    style={{
+                      fontWeight: typography.fontWeight.semibold,
+                      color: colors.neutral[700],
+                      minWidth: "60px",
+                    }}
+                  >
+                    {t.symbol}
+                  </span>
+                  <span style={{ color: colors.neutral[600] }}>
+                    {t.shares} @ ${t.price.toFixed(2)}
+                  </span>
+                  <span
+                    style={{
+                      color: colors.neutral[500],
+                      fontSize: typography.fontSize.xs,
+                    }}
+                  >
+                    ${t.amountUsd.toFixed(2)}
+                  </span>
+                  <span
+                    style={{
+                      color: colors.neutral[400],
+                      fontSize: typography.fontSize.xs,
+                    }}
+                  >
+                    comm ${t.commission.toFixed(2)}
+                  </span>
+                  {t.realizedPnl !== null && (
+                    <span
+                      style={{
+                        fontWeight: typography.fontWeight.semibold,
+                        color:
+                          t.realizedPnl >= 0
+                            ? colors.success[600]
+                            : colors.danger[600],
+                        fontSize: typography.fontSize.xs,
+                      }}
+                    >
+                      P&L: {t.realizedPnl >= 0 ? "+" : ""}${" "}
+                      {t.realizedPnl.toFixed(2)}
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
           </div>
         )}
       </div>
