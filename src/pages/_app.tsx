@@ -1,5 +1,5 @@
 import type { AppProps } from "next/app";
-import { SessionProvider } from "@/shared/lib/SessionProvider";
+import { SessionProvider } from "@/shared/ui/SessionProvider";
 
 /**
  * Pages Router wrapper. The App Router pages use the SessionProvider

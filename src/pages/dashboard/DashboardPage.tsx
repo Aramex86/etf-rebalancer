@@ -7,7 +7,12 @@ import {
   CalculateAllocationFeature,
   calculateAllocation,
 } from "@/features/calculate-allocation";
+import { fetchPortfolioRules } from "@/features/portfolio-rules";
 import { ParsedPortfolio } from "@/features/portfolio-upload";
+// Client-safe deep import: the entities/portfolio barrel re-exports the
+// server-side repository (pg) — importing it from a client component
+// pulls pg into the browser bundle. api/ modules are client-safe.
+import { fetchPortfolioSnapshot } from "@/entities/portfolio/api/fetchPortfolioSnapshot";
 import { ButtonAtom } from "@/shared/atoms/ButtonAtom";
 import { PortfolioPositionMolecule } from "@/shared/molecules/PortfolioPositionMolecule";
 import { UserMenuMolecule } from "@/shared/molecules/UserMenuMolecule";
@@ -112,11 +117,10 @@ export default function DashboardPage() {
 
   // Загружаем последний снапшот из БД при монтировании
   useEffect(() => {
-    fetch("/api/portfolio-snapshot")
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.portfolio) {
-          setPortfolio(data.portfolio);
+    fetchPortfolioSnapshot()
+      .then((snapshot) => {
+        if (snapshot) {
+          setPortfolio(snapshot);
         }
       })
       .catch(console.error)
@@ -125,14 +129,13 @@ export default function DashboardPage() {
 
   // Загружаем целевые доли
   useEffect(() => {
-    fetch("/api/portfolio-rules")
-      .then((res) => res.json())
-      .then((data) => {
-        const rules: Record<string, number> = {};
-        for (const rule of data.rules) {
-          rules[rule.symbol] = rule.targetWeight;
+    fetchPortfolioRules()
+      .then((rules) => {
+        const allocations: Record<string, number> = {};
+        for (const rule of rules) {
+          allocations[rule.symbol] = rule.targetWeight;
         }
-        setTargetAllocations(rules);
+        setTargetAllocations(allocations);
       })
       .catch(() => setTargetAllocations({}))
       .finally(() => setLoadingTargets(false));
