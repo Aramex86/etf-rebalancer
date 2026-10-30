@@ -14,15 +14,18 @@ import { CardAtom } from "@/shared/atoms/CardAtom";
 import { ButtonAtom } from "@/shared/atoms/ButtonAtom";
 import { colors, radius, spacing, typography } from "@/shared/ui/tokens";
 import { useIsMobile } from "@/shared/lib/useMediaQuery";
+import { applyPortfolioPrices } from "@/features/calculate-allocation";
 
 function PortfolioPositionsContent({
   loading,
   portfolio,
   targetAllocations,
+  rulePrices,
 }: {
   loading: boolean;
   portfolio: ParsedPortfolio | null;
   targetAllocations: Record<string, number>;
+  rulePrices: Record<string, number>;
 }) {
   if (loading) {
     return <p style={{ color: colors.neutral[500] }}>⏳ Загрузка...</p>;
@@ -36,6 +39,8 @@ function PortfolioPositionsContent({
     );
   }
 
+  const pricedPortfolio = applyPortfolioPrices(portfolio, rulePrices);
+
   return (
     <div
       style={{
@@ -44,12 +49,14 @@ function PortfolioPositionsContent({
         gap: spacing[3],
       }}
     >
-      {Object.entries(portfolio.positions).map(([symbol, value]) => {
+      {Object.entries(pricedPortfolio.positions).map(([symbol, value]) => {
         const currentWeight =
-          portfolio.totalValue > 0 ? value / portfolio.totalValue : 0;
+          pricedPortfolio.totalValue > 0
+            ? value / pricedPortfolio.totalValue
+            : 0;
         const target = targetAllocations[symbol] || 0;
-        const price = portfolio.prices?.[symbol];
-        const shares = portfolio.shares?.[symbol];
+        const price = pricedPortfolio.prices?.[symbol];
+        const shares = pricedPortfolio.shares?.[symbol];
         return (
           <PortfolioPositionMolecule
             key={symbol}
@@ -72,6 +79,7 @@ export default function RulesPage() {
   const [targetAllocations, setTargetAllocations] = useState<
     Record<string, number>
   >({});
+  const [rulePrices, setRulePrices] = useState<Record<string, number>>({});
   const [loadingTargets, setLoadingTargets] = useState(true);
   const [uploadMode, setUploadMode] = useState<"csv" | "screenshot">("csv");
   const isMobile = useIsMobile();
@@ -95,18 +103,31 @@ export default function RulesPage() {
       .then((res) => res.json())
       .then((data) => {
         const rules: Record<string, number> = {};
+        const prices: Record<string, number> = {};
         for (const rule of data.rules) {
           rules[rule.symbol] = rule.targetWeight;
+          if (rule.price !== null && rule.price > 0) {
+            prices[rule.symbol] = rule.price;
+          }
         }
         setTargetAllocations(rules);
+        setRulePrices(prices);
       })
-      .catch(() => setTargetAllocations({}))
+      .catch(() => {
+        setTargetAllocations({});
+        setRulePrices({});
+      })
       .finally(() => setLoadingTargets(false));
   }, []);
 
   const handlePortfolioParsed = useCallback((parsed: ParsedPortfolio) => {
     setPortfolio(parsed);
   }, []);
+
+  const handleRulePricesChange = useCallback(
+    (prices: Record<string, number>) => setRulePrices(prices),
+    [],
+  );
 
   return (
     <>
@@ -265,10 +286,14 @@ export default function RulesPage() {
               loading={loading || loadingTargets}
               portfolio={portfolio}
               targetAllocations={targetAllocations}
+              rulePrices={rulePrices}
             />
           </CardAtom>
 
-          <PortfolioRulesFeature portfolio={portfolio} />
+          <PortfolioRulesFeature
+            portfolio={portfolio}
+            onPricesChange={handleRulePricesChange}
+          />
         </div>
       </main>
     </>

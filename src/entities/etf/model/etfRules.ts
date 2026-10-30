@@ -132,6 +132,33 @@ export async function getEffectivePrices(): Promise<ETFPrices> {
   return CURRENT_PRICES;
 }
 
+export function applyPortfolioPrices(
+  portfolio: ETFPortfolio,
+  prices: ETFPrices,
+): ETFPortfolio {
+  const positions = { ...portfolio.positions };
+  let totalValue = portfolio.totalValue;
+
+  for (const [symbol, shares] of Object.entries(portfolio.shares ?? {})) {
+    const price = prices[symbol];
+    if (!Number.isFinite(shares) || !Number.isFinite(price) || price <= 0) {
+      continue;
+    }
+
+    const previousValue = positions[symbol] ?? 0;
+    const currentValue = shares * price;
+    positions[symbol] = currentValue;
+    totalValue += currentValue - previousValue;
+  }
+
+  return {
+    ...portfolio,
+    totalValue,
+    positions,
+    prices: { ...(portfolio.prices ?? {}), ...prices },
+  };
+}
+
 export function calculateAllocation(
   portfolio: ETFPortfolio,
   contribution: number,

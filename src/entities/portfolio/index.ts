@@ -13,6 +13,7 @@ export type {
   PortfolioRule,
   PortfolioSnapshot,
 } from "./model/portfolioRepository";
+export { fetchPortfolioSnapshot } from "./api/fetchPortfolioSnapshot";
 export { parseScreenshot } from "./model/parseScreenshotTool";
 export type { ParsedPortfolio } from "./model/parseScreenshotTool";
 export { parseCsvStatement } from "./model/parseCsvStatement";

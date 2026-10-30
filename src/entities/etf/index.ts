@@ -1,4 +1,5 @@
 export {
+  applyPortfolioPrices,
   analyzePortfolio,
   calculateAllocation,
   CURRENT_PORTFOLIO,

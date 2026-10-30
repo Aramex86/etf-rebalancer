@@ -6,6 +6,8 @@ export interface ETFPosition {
 export interface ETFPortfolio {
   totalValue: number;
   positions: Record<string, number>;
+  prices?: ETFPrices;
+  shares?: Record<string, number>;
 }
 
 export interface ETFAllocation {
