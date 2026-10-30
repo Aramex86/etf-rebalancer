@@ -124,21 +124,79 @@ function isStockAsset(assetClass: string): boolean {
   return !assetClass || ["Акции", "Stocks"].includes(assetClass);
 }
 
+/**
+ * Parse IB number formats such as 12 358,32, 12,358.32, and 12358.32.
+ */
+function parseLocalizedNumber(
+  value: string,
+  preferDecimal = false,
+): number | null {
+  const normalized = value
+    .replace(/[\s\u00a0\u202f']/g, "")
+    .replace(/[^\d,.-]/g, "");
+  if (!normalized || normalized === "-") return null;
+
+  const lastComma = normalized.lastIndexOf(",");
+  const lastDot = normalized.lastIndexOf(".");
+  const lastSeparator = Math.max(lastComma, lastDot);
+  let numeric = normalized;
+
+  if (lastSeparator >= 0) {
+    const separator = normalized[lastSeparator];
+    const trailingDigits = normalized.length - lastSeparator - 1;
+    const groups = normalized.split(separator);
+    const isThousandsGrouping =
+      !preferDecimal &&
+      trailingDigits === 3 &&
+      groups[0].replace("-", "").length >= 1 &&
+      groups[0].replace("-", "").length <= 3 &&
+      groups.slice(1).every((group) => group.length === 3);
+
+    if (!isThousandsGrouping) {
+      numeric =
+        normalized.slice(0, lastSeparator).replace(/[,.]/g, "") +
+        "." +
+        normalized.slice(lastSeparator + 1).replace(/[,.]/g, "");
+    } else {
+      numeric = normalized.replace(/[,.]/g, "");
+    }
+  }
+
+  const parsed = Number(numeric);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function normalizeColumnName(value: string): string {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-zа-яё]/g, "");
+}
+
+function findColumnIndex(
+  headers: string[],
+  aliases: readonly string[],
+  fallback: number,
+): number {
+  const normalizedAliases = aliases.map(normalizeColumnName);
+  const index = headers.findIndex((header) =>
+    normalizedAliases.includes(normalizeColumnName(header)),
+  );
+  return index === -1 ? fallback : index;
+}
+
 /** Validate and parse numeric fields from a position row */
 function parsePositionNumbers(
   quantityStr: string,
   closePriceStr: string,
   marketValueStr: string,
 ) {
-  const quantity = Number.parseFloat(quantityStr);
-  const closePrice = Number.parseFloat(closePriceStr);
-  const marketValue = Number.parseFloat(marketValueStr);
+  const quantity = parseLocalizedNumber(quantityStr);
+  const closePrice = parseLocalizedNumber(closePriceStr, true);
+  const marketValue = parseLocalizedNumber(marketValueStr);
 
-  if (
-    Number.isNaN(quantity) ||
-    Number.isNaN(closePrice) ||
-    Number.isNaN(marketValue)
-  ) {
+  if (quantity === null || closePrice === null || marketValue === null) {
     return null;
   }
   return { quantity, closePrice, marketValue };
@@ -153,6 +211,32 @@ function parseOpenPositions(
   const prices: Record<string, number> = {};
   const shares: Record<string, number> = {};
   const unknownSymbols: string[] = [];
+  const headers = parsedLines[startIndex].slice(2);
+  const assetClassColumn = findColumnIndex(
+    headers,
+    ["Asset Category", "Asset Class", "Класс активов", "Категория активов"],
+    1,
+  );
+  const symbolColumn = findColumnIndex(
+    headers,
+    ["Symbol", "Ticker", "Символ"],
+    3,
+  );
+  const quantityColumn = findColumnIndex(
+    headers,
+    ["Quantity", "Shares", "Количество", "Позиция"],
+    4,
+  );
+  const closePriceColumn = findColumnIndex(
+    headers,
+    ["Close Price", "Last Price", "Цена закрытия", "Последняя цена"],
+    8,
+  );
+  const marketValueColumn = findColumnIndex(
+    headers,
+    ["Value", "Market Value", "Стоимость", "Рыночная стоимость"],
+    9,
+  );
 
   for (let i = startIndex + 1; i < parsedLines.length; i++) {
     const [section, rowType, ...rest] = parsedLines[i];
@@ -161,12 +245,11 @@ function parseOpenPositions(
       break;
     if (rowType !== DATA_ROW || rest[0] !== SUMMARY_ROW) continue;
 
-    const assetClass = rest[1];
-    const symbol = rest[3];
-    const quantityStr = rest[4];
-    // rest[5]=Множ., rest[6]=Цена за единицу, rest[7]=Базовая стоимость
-    const closePriceStr = rest[8]; // "Цена закрытия" / "Close Price"
-    const marketValueStr = rest[9]; // "Стоимость" / "Value"
+    const assetClass = rest[assetClassColumn] ?? "";
+    const symbol = rest[symbolColumn];
+    const quantityStr = rest[quantityColumn];
+    const closePriceStr = rest[closePriceColumn];
+    const marketValueStr = rest[marketValueColumn];
 
     if (!symbol || !quantityStr || !closePriceStr || !marketValueStr) continue;
     if (!isStockAsset(assetClass)) continue;
@@ -197,8 +280,7 @@ function tryExtractNavTotal(navRest: string[]): number | null {
   if (!isTotalRow(assetClass)) return null;
 
   // rest[4] = "Текущий итог" / "Current Total"
-  const currentTotal = Number.parseFloat(navRest[4]);
-  return Number.isNaN(currentTotal) ? null : currentTotal;
+  return parseLocalizedNumber(navRest[4]);
 }
 
 /** Extract total portfolio value from NAV section */

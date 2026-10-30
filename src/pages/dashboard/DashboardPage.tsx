@@ -4,15 +4,15 @@ import { useState, useCallback, useEffect, useMemo } from "react";
 import Link from "next/link";
 import { AIExplanationFeature } from "@/features/ai-explanation";
 import {
+  applyPortfolioPrices,
   CalculateAllocationFeature,
   calculateAllocation,
 } from "@/features/calculate-allocation";
 import { fetchPortfolioRules } from "@/features/portfolio-rules";
-import { ParsedPortfolio } from "@/features/portfolio-upload";
-// Client-safe deep import: the entities/portfolio barrel re-exports the
-// server-side repository (pg) — importing it from a client component
-// pulls pg into the browser bundle. api/ modules are client-safe.
-import { fetchPortfolioSnapshot } from "@/entities/portfolio/api/fetchPortfolioSnapshot";
+import {
+  fetchPortfolioSnapshot,
+  ParsedPortfolio,
+} from "@/features/portfolio-upload";
 import { ButtonAtom } from "@/shared/atoms/ButtonAtom";
 import { PortfolioPositionMolecule } from "@/shared/molecules/PortfolioPositionMolecule";
 import { UserMenuMolecule } from "@/shared/molecules/UserMenuMolecule";
@@ -23,41 +23,47 @@ function PortfolioPositionsContent({
   loading,
   portfolio,
   targetAllocations,
+  rulePrices,
   depositAmount,
 }: {
   loading: boolean;
   portfolio: ParsedPortfolio | null;
   targetAllocations: Record<string, number>;
+  rulePrices: Record<string, number>;
   depositAmount: number;
 }) {
+  const pricedPortfolio = portfolio
+    ? applyPortfolioPrices(portfolio, rulePrices)
+    : null;
+
   // Compute projected weights after deposit allocation
   const projectedWeights = useMemo(() => {
-    if (!portfolio || depositAmount <= 0) return null;
+    if (!pricedPortfolio || depositAmount <= 0) return null;
 
     const recommendations = calculateAllocation(
-      portfolio,
+      pricedPortfolio,
       depositAmount,
-      portfolio.prices ?? {},
+      pricedPortfolio.prices ?? {},
       targetAllocations,
     );
 
-    const totalAfter = portfolio.totalValue + depositAmount;
+    const totalAfter = pricedPortfolio.totalValue + depositAmount;
     const weights: Record<string, number> = {};
 
     // Non-rebalanced ETFs: value stays the same, but weight drops
     // because the total portfolio grows by depositAmount
-    for (const [symbol, value] of Object.entries(portfolio.positions)) {
+    for (const [symbol, value] of Object.entries(pricedPortfolio.positions)) {
       weights[symbol] = totalAfter > 0 ? value / totalAfter : 0;
     }
 
     // Apply recommendations: ETFs receiving new money get updated weights
     for (const rec of recommendations) {
-      const currentValue = portfolio.positions[rec.symbol] || 0;
+      const currentValue = pricedPortfolio.positions[rec.symbol] || 0;
       weights[rec.symbol] = (currentValue + rec.amount) / totalAfter;
     }
 
     return weights;
-  }, [portfolio, depositAmount, targetAllocations]);
+  }, [pricedPortfolio, depositAmount, targetAllocations]);
 
   if (loading) {
     return <p style={{ color: colors.neutral[500] }}>⏳ Загрузка...</p>;
@@ -79,12 +85,14 @@ function PortfolioPositionsContent({
         gap: spacing[3],
       }}
     >
-      {Object.entries(portfolio.positions).map(([symbol, value]) => {
+      {Object.entries(pricedPortfolio!.positions).map(([symbol, value]) => {
         const currentWeight =
-          portfolio.totalValue > 0 ? value / portfolio.totalValue : 0;
+          pricedPortfolio!.totalValue > 0
+            ? value / pricedPortfolio!.totalValue
+            : 0;
         const target = targetAllocations[symbol] || 0;
-        const price = portfolio.prices?.[symbol];
-        const shares = portfolio.shares?.[symbol];
+        const price = pricedPortfolio!.prices?.[symbol];
+        const shares = pricedPortfolio!.shares?.[symbol];
         const newWeight = projectedWeights?.[symbol];
         return (
           <PortfolioPositionMolecule
@@ -113,6 +121,7 @@ export default function DashboardPage() {
   const [targetAllocations, setTargetAllocations] = useState<
     Record<string, number>
   >({});
+  const [rulePrices, setRulePrices] = useState<Record<string, number>>({});
   const [loadingTargets, setLoadingTargets] = useState(true);
 
   // Загружаем последний снапшот из БД при монтировании
@@ -132,10 +141,15 @@ export default function DashboardPage() {
     fetchPortfolioRules()
       .then((rules) => {
         const allocations: Record<string, number> = {};
+        const prices: Record<string, number> = {};
         for (const rule of rules) {
           allocations[rule.symbol] = rule.targetWeight;
+          if (rule.price !== null && rule.price > 0) {
+            prices[rule.symbol] = rule.price;
+          }
         }
         setTargetAllocations(allocations);
+        setRulePrices(prices);
       })
       .catch(() => setTargetAllocations({}))
       .finally(() => setLoadingTargets(false));
@@ -209,7 +223,11 @@ export default function DashboardPage() {
                 amount={amount}
                 onAmountChange={setAmount}
                 onCalculate={handleCalculate}
-                portfolio={portfolio || undefined}
+                portfolio={
+                  portfolio
+                    ? applyPortfolioPrices(portfolio, rulePrices)
+                    : undefined
+                }
               />
             </div>
             <div style={{ flex: "1 1 300px", minWidth: "280px" }}>
@@ -259,6 +277,7 @@ export default function DashboardPage() {
               loading={loading || loadingTargets}
               portfolio={portfolio}
               targetAllocations={targetAllocations}
+              rulePrices={rulePrices}
               depositAmount={amount}
             />
           </CardAtom>

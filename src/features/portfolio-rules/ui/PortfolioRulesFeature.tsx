@@ -25,6 +25,7 @@ interface EditableRule extends PortfolioRule {
 
 interface PortfolioRulesFeatureProps {
   portfolio?: ParsedPortfolio | null;
+  onPricesChange?: (prices: Record<string, number>) => void;
 }
 
 function toEditableRules(rules: PortfolioRule[]): EditableRule[] {
@@ -67,6 +68,7 @@ function calculateTotalWeight(rules: EditableRule[]): number {
 
 export function PortfolioRulesFeature({
   portfolio,
+  onPricesChange,
 }: PortfolioRulesFeatureProps) {
   const [rules, setRules] = useState<EditableRule[]>([]);
   const [loading, setLoading] = useState(true);
@@ -77,16 +79,20 @@ export function PortfolioRulesFeature({
 
   console.log("rules", isMobile);
 
-  useEffect(() => {
-    loadRules();
-  }, []);
-
   async function loadRules() {
     try {
-      setLoading(true);
-      setError(null);
       const data = await fetchPortfolioRules();
+      setError(null);
       setRules(toEditableRules(data));
+      onPricesChange?.(
+        Object.fromEntries(
+          data.flatMap((rule) =>
+            rule.price !== null && rule.price > 0
+              ? [[rule.symbol, rule.price]]
+              : [],
+          ),
+        ),
+      );
     } catch (err) {
       setError("Не удалось загрузить правила портфеля");
       console.error(err);
@@ -94,6 +100,38 @@ export function PortfolioRulesFeature({
       setLoading(false);
     }
   }
+
+  // Reload persisted prices and rules when a new portfolio is imported.
+  useEffect(() => {
+    let active = true;
+    fetchPortfolioRules()
+      .then((data) => {
+        if (!active) return;
+        setError(null);
+        setRules(toEditableRules(data));
+        onPricesChange?.(
+          Object.fromEntries(
+            data.flatMap((rule) =>
+              rule.price !== null && rule.price > 0
+                ? [[rule.symbol, rule.price]]
+                : [],
+            ),
+          ),
+        );
+      })
+      .catch((err) => {
+        if (!active) return;
+        setError("Не удалось загрузить правила портфеля");
+        console.error(err);
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [portfolio, onPricesChange]);
 
   async function handleSave() {
     const dirtyRules = rules.filter((rule) => rule.isDirty);
@@ -126,6 +164,15 @@ export function PortfolioRulesFeature({
       );
 
       setRules(toEditableRules(updated));
+      onPricesChange?.(
+        Object.fromEntries(
+          updated.flatMap((rule) =>
+            rule.price !== null && rule.price > 0
+              ? [[rule.symbol, rule.price]]
+              : [],
+          ),
+        ),
+      );
       setSuccess("Правила сохранены");
     } catch (err) {
       setError("Не удалось сохранить правила");
@@ -152,9 +199,17 @@ export function PortfolioRulesFeature({
   }
 
   function updateRule(symbol: string, updates: Partial<PortfolioRule>) {
-    setRules((prev) =>
-      prev.map((rule) =>
-        rule.symbol === symbol ? { ...rule, ...updates, isDirty: true } : rule,
+    const updatedRules = rules.map((rule) =>
+      rule.symbol === symbol ? { ...rule, ...updates, isDirty: true } : rule,
+    );
+    setRules(updatedRules);
+    onPricesChange?.(
+      Object.fromEntries(
+        updatedRules.flatMap((rule) =>
+          rule.price !== null && rule.price > 0
+            ? [[rule.symbol, rule.price]]
+            : [],
+        ),
       ),
     );
     setSuccess(null);

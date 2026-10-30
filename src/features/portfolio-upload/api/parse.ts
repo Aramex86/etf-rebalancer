@@ -12,7 +12,10 @@ export async function parsePortfolioScreenshot(
   });
 
   if (!response.ok) {
-    throw new Error("Failed to parse portfolio screenshot");
+    const data = await response.json().catch(() => ({}));
+    throw new Error(
+      data.error || "Failed to parse portfolio screenshot",
+    );
   }
 
   const data = await response.json();

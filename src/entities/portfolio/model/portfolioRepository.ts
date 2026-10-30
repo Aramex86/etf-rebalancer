@@ -55,10 +55,8 @@ export async function getLatestSnapshotPrices(): Promise<
   Record<string, number>
 > {
   const snapshot = await getLatestPortfolioSnapshot();
-  if (snapshot && Object.keys(snapshot.prices).length > 0) {
-    return snapshot.prices;
-  }
-  return getRulePrices();
+  const rulePrices = await getRulePrices();
+  return { ...(snapshot?.prices ?? {}), ...rulePrices };
 }
 
 export async function savePortfolioRule(rule: PortfolioRule): Promise<void> {

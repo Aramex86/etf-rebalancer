@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getLatestPortfolioSnapshot } from "@/entities/portfolio";
 import {
+  applyPortfolioPrices,
   calculateAllocation,
   getEffectiveTargetAllocations,
   getEffectivePrices,
@@ -111,6 +112,8 @@ export async function POST(req: Request) {
         portfolio = {
           totalValue: snapshot.totalValue,
           positions: snapshot.positions,
+          prices: snapshot.prices,
+          shares: snapshot.shares,
         };
       }
     }
@@ -121,6 +124,7 @@ export async function POST(req: Request) {
     // Расчёт напрямую (без Mastra Tool)
     const targetAllocations = await getEffectiveTargetAllocations();
     const prices = await getEffectivePrices();
+    portfolio = applyPortfolioPrices(portfolio, prices);
     const recommendations = calculateAllocation(
       portfolio,
       contribution,
